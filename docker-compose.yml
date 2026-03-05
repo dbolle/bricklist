@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - bricklist_data:/data
+    environment:
+      - DATABASE_URL=sqlite:////data/bricklist.db
+    restart: unless-stopped
+
+volumes:
+  bricklist_data:
+    driver: local
