@@ -26,10 +26,10 @@ Open http://localhost:8000, go to **Settings**, and paste in a free [Rebrickable
 Your projects and sorting progress live in a single SQLite file inside the `bricklist_data` Docker volume. Two ways to back it up:
 
 - **From the UI** — Settings → **Download Backup** streams a consistent snapshot of the database (safe to do while the app is running). Do this before upgrading.
-- **Scheduled/scripted** — copy the file out of the volume:
+- **Scheduled/scripted** — copy the file out of the volume (Compose prefixes the volume name with the project, so it's `bricklist_bricklist_data` by default):
 
   ```bash
-  docker run --rm -v bricklist_data:/data -v "$PWD":/backup alpine \
+  docker run --rm -v bricklist_bricklist_data:/data -v "$PWD":/backup alpine \
     cp /data/bricklist.db /backup/bricklist-backup.db
   ```
 
