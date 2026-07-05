@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import func, text
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -504,6 +504,65 @@ def update_part_progress(
         db.add(row)
     db.commit()
     return {"set_part_id": set_part_id, "found_qty": found_qty, "quantity": part.quantity}
+
+
+# ---------------------------------------------------------------------------
+# Global part search — "I'm holding this piece, which project needs it?"
+# ---------------------------------------------------------------------------
+
+@app.get("/api/search/parts")
+def search_parts(q: str, include_spares: bool = False, db: Session = Depends(get_db)):
+    q = q.strip()
+    if len(q) < 2:
+        return {"results": []}
+    like = f"%{q}%"
+    query = (
+        db.query(SetPart, Project, PartProgress.found_qty)
+        .join(Project, Project.set_num == SetPart.set_num)
+        .outerjoin(PartProgress, and_(
+            PartProgress.set_part_id == SetPart.id,
+            PartProgress.project_id == Project.id,
+        ))
+        .filter(or_(
+            SetPart.part_num.like(like),
+            SetPart.element_id.like(like),
+            SetPart.part_name.like(like),
+        ))
+    )
+    if not include_spares:
+        query = query.filter(SetPart.is_spare == False)
+    rows = query.limit(500).all()
+
+    results = [
+        {
+            "project_id": project.id,
+            "project_name": project.name,
+            "found_qty": found_qty or 0,
+            "part": {
+                "id": sp.id,
+                "part_num": sp.part_num,
+                "part_name": sp.part_name,
+                "part_img_url": sp.part_img_url,
+                "color_id": sp.color_id,
+                "color_name": sp.color.name if sp.color else "",
+                "color_rgb": sp.color.rgb if sp.color else "808080",
+                "quantity": sp.quantity,
+                "is_spare": sp.is_spare,
+                "element_id": sp.element_id,
+                "part_cat_name": sp.part_cat_name or "",
+                "minifig_num": sp.minifig_num,
+                "minifig_name": sp.minifig_name or "",
+            },
+        }
+        for sp, project, found_qty in rows
+    ]
+    # Projects that still need the piece come first
+    results.sort(key=lambda r: (
+        r["found_qty"] >= r["part"]["quantity"],
+        r["part"]["part_name"].lower(),
+        r["project_name"].lower(),
+    ))
+    return {"results": results}
 
 
 # ---------------------------------------------------------------------------

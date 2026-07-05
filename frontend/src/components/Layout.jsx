@@ -31,6 +31,14 @@ const SearchIcon = () => (
   </svg>
 )
 
+const BrickIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="9" width="18" height="10" rx="1" />
+    <path d="M6 9V6.5A1.5 1.5 0 0 1 7.5 5h2A1.5 1.5 0 0 1 11 6.5V9" />
+    <path d="M13 9V6.5A1.5 1.5 0 0 1 14.5 5h2A1.5 1.5 0 0 1 18 6.5V9" />
+  </svg>
+)
+
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -49,7 +57,8 @@ export default function Layout() {
 
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 flex justify-around safe-area-inset-bottom z-50">
         <NavIcon to="/" label="Home"><HomeIcon /></NavIcon>
-        <NavIcon to="/search" label="Search"><SearchIcon /></NavIcon>
+        <NavIcon to="/search" label="Sets"><SearchIcon /></NavIcon>
+        <NavIcon to="/find" label="Find Part"><BrickIcon /></NavIcon>
         <NavIcon to="/settings" label="Settings"><SettingsIcon /></NavIcon>
       </nav>
     </div>
