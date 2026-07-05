@@ -32,6 +32,27 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 # Requires DATABASE_URL env var or defaults to sqlite:////data/bricklist.db
 ```
 
+### Backend tests
+Tests live in `backend/tests/` and run inside Docker (the host may have no pip/venv). Build the test image once, then run:
+```bash
+docker build -t bricklist-test -f- . <<'EOF'
+FROM python:3.12-slim
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt pytest
+EOF
+docker run --rm -v "$PWD/backend":/app -w /app bricklist-test python -m pytest tests/ -q
+```
+Tests point `DATABASE_URL` at a throwaway SQLite file (see `tests/conftest.py`) — never at the real volume.
+
+### Backing up the live database
+The production database lives in the Docker volume `bricklist_bricklist_data` (Compose prefixes the project name). Before any change that touches the schema or requires a container rebuild, back it up:
+```bash
+docker compose stop
+docker run --rm -v bricklist_bricklist_data:/data -v ~/bricklist-backups:/backup alpine \
+  sh -c 'cp /data/bricklist.db* /backup/'
+```
+There is also a `GET /api/backup` endpoint (Settings → Download Backup) that snapshots via `VACUUM INTO` while the app is running.
+
 ## Architecture
 
 This is a single-container Docker app. The Dockerfile is a two-stage build: Node 20 builds the React frontend into `frontend/dist/`, then Python 3.12 serves both the FastAPI backend and the built static files from the same process on port 8000.
@@ -43,9 +64,11 @@ This is a single-container Docker app. The Dockerfile is a two-stage build: Node
 
 **Data flow for a project:**
 1. User searches for a set → `GET /api/rebrickable/search` proxies to Rebrickable API
-2. User creates a project → set parts are fetched from Rebrickable and cached in SQLite (`sets`, `set_parts`, `colors` tables)
-3. Cache is considered stale after 7 days; refreshing re-fetches and upserts parts, generating `removed_part_notifications` for any previously-found parts that disappeared
+2. User creates a project → set parts (including per-minifig parts) are fetched from Rebrickable and cached in SQLite (`sets`, `set_parts`, `colors` tables). This first fetch is synchronous.
+3. Cache is considered stale after 7 days. Stale sets are served immediately and refreshed by a deduplicated background task (`main.py:ensure_set_cached`) — page loads never block on Rebrickable. Refreshes upsert parts in place (preserving progress row IDs) and generate `removed_part_notifications` for any previously-found parts that disappeared.
 4. User taps a part card → `PATCH /api/projects/{id}/parts/{set_part_id}` upserts a `part_progress` row
+
+**Rebrickable client** (`backend/rebrickable.py`): one shared httpx client per event loop, in-flight requests capped by a semaphore, 429s retried with `Retry-After`/exponential backoff, part-categories list cached in memory for 24h. The free API tier throttles at ~1 req/s — keep request bursts small.
 
 **Key relationships:**
 - A `Project` belongs to one Lego set (`SetModel`) and optionally one `Group`
@@ -55,9 +78,12 @@ This is a single-container Docker app. The Dockerfile is a two-stage build: Node
 **Frontend pages:**
 - `HomePage` — lists all projects and groups
 - `SearchPage` — search Rebrickable and create a new project
-- `ProjectPage` — the main sorting UI; loads parts + progress, tap to increment found count (optimistic updates)
+- `FindPage` — global part search (`GET /api/search/parts`): match a piece by part number / element ID / name across all projects and log it from the results
+- `ProjectPage` — the main sorting UI; loads parts + progress, +/− or direct entry per part (optimistic updates), group/sort/filter controls, removed-part notifications
 - `GroupPage` — aggregated part view across all projects in a group
-- `SettingsPage` — save the Rebrickable API key
+- `SettingsPage` — Rebrickable API key, per-set cache refresh, database backup download
+
+**Progress math:** `total_parts`/`found_parts` in `project_summary` are piece counts (sum of quantities), with found capped per part — never mix them with row counts.
 
 All API calls go through the thin `frontend/src/api.js` wrapper. The Vite dev server proxies `/api` to `localhost:8000`, so the backend must be running separately when using `npm run dev`.
 
