@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
@@ -12,10 +13,12 @@ from sqlalchemy.orm import Session
 import rebrickable
 from database import (
     Color, Group, PartProgress, Project, RemovedPartNotification,
-    SetModel, SetPart, Setting, get_db, init_db,
+    SessionLocal, SetModel, SetPart, Setting, get_db, init_db,
 )
 
 CACHE_MAX_AGE_DAYS = 7
+
+logger = logging.getLogger("bricklist")
 
 
 @asynccontextmanager
@@ -49,13 +52,48 @@ def is_stale(cached_at: datetime) -> bool:
     return datetime.utcnow() - cached_at > timedelta(days=CACHE_MAX_AGE_DAYS)
 
 
+# Sets currently being refreshed in the background, plus strong references to
+# the tasks so they aren't garbage-collected mid-flight.
+_refreshing_sets: set[str] = set()
+_background_tasks: set[asyncio.Task] = set()
+
+
+async def _refresh_set_in_background(set_num: str, api_key: str) -> None:
+    if set_num in _refreshing_sets:
+        return
+    _refreshing_sets.add(set_num)
+    try:
+        db = SessionLocal()
+        try:
+            await _fetch_and_cache_set(set_num, api_key, db)
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Background refresh of set %s failed", set_num)
+    finally:
+        _refreshing_sets.discard(set_num)
+
+
 async def ensure_set_cached(set_num: str, db: Session) -> SetModel:
+    """Return the cached set, fetching it only if it has never been cached.
+
+    A stale cache is served immediately and refreshed in the background so
+    opening a project never blocks on (or fails because of) Rebrickable.
+    """
     set_num = normalize_set_num(set_num)
     db_set = db.get(SetModel, set_num)
-    if db_set and not is_stale(db_set.cached_at):
-        return db_set
-    api_key = get_api_key(db)
-    return await _fetch_and_cache_set(set_num, api_key, db)
+    if db_set is None:
+        api_key = get_api_key(db)
+        return await _fetch_and_cache_set(set_num, api_key, db)
+
+    if is_stale(db_set.cached_at) and set_num not in _refreshing_sets:
+        setting = db.get(Setting, "rebrickable_api_key")
+        api_key = setting.value if setting else ""
+        if api_key:
+            task = asyncio.create_task(_refresh_set_in_background(set_num, api_key))
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+    return db_set
 
 
 async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetModel:
