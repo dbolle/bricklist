@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 import rebrickable
@@ -184,21 +184,23 @@ def set_to_dict(s: SetModel) -> dict:
 
 
 def project_summary(p: Project, db: Session) -> dict:
-    total = db.query(SetPart).filter(
-        SetPart.set_num == p.set_num,
-        SetPart.is_spare == False,
-    ).count()
+    # Both totals are piece counts: sum of quantities, with found capped per part
+    # so a shrunken inventory can never push progress past 100%.
+    total = (
+        db.query(func.coalesce(func.sum(SetPart.quantity), 0))
+        .filter(SetPart.set_num == p.set_num, SetPart.is_spare == False)
+        .scalar()
+    )
     found = (
-        db.query(PartProgress)
+        db.query(PartProgress.found_qty, SetPart.quantity)
         .join(SetPart, PartProgress.set_part_id == SetPart.id)
         .filter(
             PartProgress.project_id == p.id,
             SetPart.is_spare == False,
         )
-        .with_entities(PartProgress.found_qty)
         .all()
     )
-    found_count = sum(r.found_qty for r in found)
+    found_count = sum(min(f, q) for f, q in found)
     return {
         "id": p.id,
         "set_num": p.set_num,
