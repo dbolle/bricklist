@@ -39,6 +39,9 @@ export const api = {
   getProgress: (id) => request('GET', `/projects/${id}/progress`),
   updatePart: (projectId, setPartId, foundQty) =>
     request('PATCH', `/projects/${projectId}/parts/${setPartId}`, { found_qty: foundQty }),
+  getRemovedParts: (projectId) => request('GET', `/projects/${projectId}/removed-parts`),
+  dismissRemovedPart: (notificationId) => request('DELETE', `/removed-parts/${notificationId}`),
+  dismissAllRemovedParts: (projectId) => request('DELETE', `/projects/${projectId}/removed-parts`),
 
   // Groups
   getGroups: () => request('GET', '/groups'),

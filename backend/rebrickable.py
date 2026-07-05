@@ -82,6 +82,7 @@ async def get_set_parts(api_key: str, set_num: str) -> list[dict]:
                     "part_num": item["part"]["part_num"],
                     "part_name": item["part"]["name"],
                     "part_img_url": item["part"].get("part_img_url"),
+                    "part_cat_id": item["part"].get("part_cat_id"),
                     "color_id": item["color"]["id"],
                     "color_name": item["color"]["name"],
                     "color_rgb": item["color"]["rgb"],
@@ -93,3 +94,90 @@ async def get_set_parts(api_key: str, set_num: str) -> list[dict]:
             params = {}  # next URL already contains query params
 
     return results
+
+
+async def get_set_minifigs(api_key: str, set_num: str) -> list[dict]:
+    results = []
+    url = f"{REBRICKABLE_BASE}/sets/{set_num}/minifigs/"
+    params: dict = {"page_size": 100}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while url:
+            try:
+                resp = await client.get(url, params=params, headers=_headers(api_key))
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable error: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable unreachable: {e}")
+
+            data = resp.json()
+            for item in data.get("results", []):
+                results.append({
+                    "fig_num": item["set_num"],
+                    "name": item["set_name"],
+                    "quantity": item.get("quantity", 1),
+                })
+            url = data.get("next")
+            params = {}
+
+    return results
+
+
+async def get_minifig_parts(api_key: str, fig_num: str) -> list[dict]:
+    results = []
+    url = f"{REBRICKABLE_BASE}/minifigs/{fig_num}/parts/"
+    params: dict = {"page_size": 100}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while url:
+            try:
+                resp = await client.get(url, params=params, headers=_headers(api_key))
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable error: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable unreachable: {e}")
+
+            data = resp.json()
+            for item in data.get("results", []):
+                results.append({
+                    "part_num": item["part"]["part_num"],
+                    "part_name": item["part"]["name"],
+                    "part_img_url": item["part"].get("part_img_url"),
+                    "part_cat_id": item["part"].get("part_cat_id"),
+                    "color_id": item["color"]["id"],
+                    "color_name": item["color"]["name"],
+                    "color_rgb": item["color"]["rgb"],
+                    "quantity": item["quantity"],
+                    "is_spare": item.get("is_spare", False),
+                    "element_id": item.get("element_id"),
+                })
+            url = data.get("next")
+            params = {}
+
+    return results
+
+
+async def get_part_categories(api_key: str) -> dict[int, str]:
+    result = {}
+    url = f"{REBRICKABLE_BASE}/part_categories/"
+    params: dict = {"page_size": 200}
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        while url:
+            try:
+                resp = await client.get(url, params=params, headers=_headers(api_key))
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable error: {e.response.status_code}")
+            except httpx.RequestError as e:
+                raise HTTPException(status_code=502, detail=f"Rebrickable unreachable: {e}")
+
+            data = resp.json()
+            for item in data.get("results", []):
+                result[item["id"]] = item["name"]
+            url = data.get("next")
+            params = {}
+
+    return result

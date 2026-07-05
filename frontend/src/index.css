@@ -15,12 +15,3 @@ img {
   transition: opacity 0.2s ease;
 }
 
-/* Part card press effect */
-.part-card {
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-  user-select: none;
-}
-
-.part-card:active {
-  transform: scale(0.96);
-}

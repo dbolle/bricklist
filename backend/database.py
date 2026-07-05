@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, Integer, String, Boolean, DateTime,
-    ForeignKey, UniqueConstraint, Index, event
+    ForeignKey, UniqueConstraint, Index, event, text
 )
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
@@ -65,13 +65,18 @@ class SetPart(Base):
     quantity = Column(Integer, nullable=False)
     is_spare = Column(Boolean, nullable=False, default=False)
     element_id = Column(String)
+    part_cat_id = Column(Integer, nullable=True)
+    part_cat_name = Column(String, nullable=True)
+    # '' for regular set parts; 'fig-XXXXX' for parts that belong to a minifigure
+    minifig_num = Column(String, nullable=False, default='', server_default='')
+    minifig_name = Column(String, nullable=True)
 
     set = relationship("SetModel", back_populates="parts")
     color = relationship("Color", back_populates="parts")
     progress_rows = relationship("PartProgress", back_populates="set_part", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint("set_num", "part_num", "color_id", "is_spare"),
+        UniqueConstraint("set_num", "part_num", "color_id", "is_spare", "minifig_num"),
         Index("idx_set_parts_set_num", "set_num"),
     )
 
@@ -119,6 +124,26 @@ class PartProgress(Base):
     )
 
 
+class RemovedPartNotification(Base):
+    """Persists a record when a cache refresh removes a part the user had found.
+    Displayed in the project page so the user knows to remove it from their bag."""
+    __tablename__ = "removed_part_notifications"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    part_num = Column(String, nullable=False)
+    part_name = Column(String, nullable=False)
+    part_img_url = Column(String)
+    color_name = Column(String, nullable=False, default="")
+    color_rgb = Column(String, nullable=False, default="808080")
+    part_cat_name = Column(String)
+    found_qty = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_removed_notifications_project", "project_id"),
+    )
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -129,6 +154,49 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Migrations for existing databases
+    with engine.connect() as conn:
+        cols = [row[1] for row in conn.execute(text("PRAGMA table_info(set_parts)")).fetchall()]
+        if "part_cat_id" not in cols:
+            conn.execute(text("ALTER TABLE set_parts ADD COLUMN part_cat_id INTEGER"))
+        if "part_cat_name" not in cols:
+            conn.execute(text("ALTER TABLE set_parts ADD COLUMN part_cat_name TEXT"))
+        if "minifig_num" not in cols:
+            # Recreate set_parts to add minifig_num/minifig_name and update the unique
+            # constraint to include minifig_num. Row IDs are preserved so part_progress
+            # foreign keys remain valid.
+            conn.execute(text("PRAGMA foreign_keys=OFF"))
+            conn.execute(text("""
+                CREATE TABLE set_parts_new (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    set_num     TEXT    NOT NULL,
+                    part_num    TEXT    NOT NULL,
+                    part_name   TEXT    NOT NULL,
+                    part_img_url TEXT,
+                    color_id    INTEGER NOT NULL,
+                    quantity    INTEGER NOT NULL,
+                    is_spare    BOOLEAN NOT NULL DEFAULT 0,
+                    element_id  TEXT,
+                    part_cat_id INTEGER,
+                    part_cat_name TEXT,
+                    minifig_num TEXT    NOT NULL DEFAULT '',
+                    minifig_name TEXT,
+                    UNIQUE(set_num, part_num, color_id, is_spare, minifig_num)
+                )
+            """))
+            conn.execute(text("""
+                INSERT INTO set_parts_new
+                    (id, set_num, part_num, part_name, part_img_url, color_id, quantity,
+                     is_spare, element_id, part_cat_id, part_cat_name)
+                SELECT  id, set_num, part_num, part_name, part_img_url, color_id, quantity,
+                        is_spare, element_id, part_cat_id, part_cat_name
+                FROM set_parts
+            """))
+            conn.execute(text("DROP TABLE set_parts"))
+            conn.execute(text("ALTER TABLE set_parts_new RENAME TO set_parts"))
+            conn.execute(text("CREATE INDEX idx_set_parts_set_num ON set_parts(set_num)"))
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.commit()
     db = SessionLocal()
     try:
         if not db.get(Setting, "rebrickable_api_key"):

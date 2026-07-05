@@ -1,64 +1,44 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import PartCard from '../components/PartCard.jsx'
 
-function AggregatePartCard({ part }) {
-  const isComplete = part.total_found >= part.total_needed
-  const isPartial = part.total_found > 0 && part.total_found < part.total_needed
-
-  let bgClass = 'bg-white'
-  if (isComplete) bgClass = 'bg-green-50'
-  else if (isPartial) bgClass = 'bg-yellow-50'
+function GroupSectionHeader({ group, progress }) {
+  const totalNeeded = group.parts.reduce((a, p) => a + p.quantity, 0)
+  const totalFound = group.parts.reduce(
+    (a, p) => a + Math.min(progress[p.id] ?? 0, p.quantity), 0
+  )
+  const pct = totalNeeded > 0 ? Math.round((totalFound / totalNeeded) * 100) : 0
 
   return (
-    <div
-      className={`relative rounded-xl shadow-sm border overflow-hidden ${bgClass} ${
-        isComplete ? 'border-green-300' : isPartial ? 'border-yellow-300' : 'border-gray-200'
-      }`}
-      style={{ borderLeftWidth: '4px', borderLeftColor: `#${part.color_rgb}` }}
-    >
-      {isComplete && (
-        <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
-          <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </div>
+    <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-y border-gray-200 mt-1 first:mt-0">
+      {group.colorRgb && (
+        <div
+          className="w-4 h-4 rounded-full flex-shrink-0 border border-black/10"
+          style={{ backgroundColor: `#${group.colorRgb}` }}
+        />
       )}
-
-      <div className="aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
-        {part.part_img_url ? (
-          <img
-            src={part.part_img_url}
-            alt={part.part_name}
-            loading="lazy"
-            className="w-full h-full object-contain p-1"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-              e.currentTarget.nextElementSibling.style.display = 'flex'
-            }}
-          />
-        ) : null}
-        <div className={`${part.part_img_url ? 'hidden' : 'flex'} w-full h-full items-center justify-center`}>
-          <span className="text-xs text-gray-400 text-center px-1">{part.part_num}</span>
-        </div>
-      </div>
-
-      <div className="p-2">
-        <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2">{part.part_name}</p>
-        <p className="text-xs text-gray-500 mt-0.5 truncate">{part.color_name}</p>
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className={`text-sm font-bold ${isComplete ? 'text-green-600' : isPartial ? 'text-yellow-600' : 'text-gray-400'}`}>
-            {part.total_found}/{part.total_needed}
-          </span>
-        </div>
-        <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full ${isComplete ? 'bg-green-500' : 'bg-yellow-400'}`}
-            style={{ width: `${Math.min(100, (part.total_found / part.total_needed) * 100)}%` }}
-          />
-        </div>
-      </div>
+      <span className="font-semibold text-sm text-gray-800 flex-1 truncate">{group.label}</span>
+      <span className="text-xs text-gray-500 tabular-nums">{totalFound}/{totalNeeded}</span>
+      <span className={`text-xs font-semibold tabular-nums w-8 text-right ${pct === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+        {pct}%
+      </span>
     </div>
+  )
+}
+
+function Chip({ label, active, onClick, color }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+        active
+          ? color === 'purple' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
+          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+      }`}
+    >
+      {label}
+    </button>
   )
 }
 
@@ -67,13 +47,18 @@ export default function GroupPage() {
   const navigate = useNavigate()
 
   const [group, setGroup] = useState(null)
-  const [parts, setParts] = useState([])
+  // projectsData: [{ project, parts: SetPart[], progress: {[setPartId]: foundQty} }]
+  const [projectsData, setProjectsData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showSpares, setShowSpares] = useState(false)
+  const [showMinifigs, setShowMinifigs] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [groupBy, setGroupBy] = useState('none')
+  const [sortBy, setSortBy] = useState('status')
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
+  const [toast, setToast] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -81,14 +66,26 @@ export default function GroupPage() {
       setLoading(true)
       setError(null)
       try {
-        const [grp, partsData] = await Promise.all([
-          api.getGroup(id),
-          api.getGroupParts(id, true),
-        ])
+        const grp = await api.getGroup(id)
         if (cancelled) return
         setGroup(grp)
         setDraftName(grp.name)
-        setParts(partsData.parts || [])
+
+        const loaded = await Promise.all(
+          (grp.projects || []).map(async (proj) => {
+            const [partsData, progressData] = await Promise.all([
+              api.getSetParts(proj.set_num, true),
+              api.getProgress(proj.id),
+            ])
+            return {
+              project: proj,
+              parts: partsData.parts || [],
+              progress: progressData.progress || {},
+            }
+          })
+        )
+        if (cancelled) return
+        setProjectsData(loaded)
       } catch (e) {
         if (!cancelled) setError(e.message)
       } finally {
@@ -99,17 +96,110 @@ export default function GroupPage() {
     return () => { cancelled = true }
   }, [id])
 
-  async function handleRename() {
-    if (!draftName.trim() || draftName === group.name) {
-      setEditingName(false)
-      return
+  const showToast = useCallback((msg, isError = false) => {
+    setToast({ msg, isError })
+    setTimeout(() => setToast(null), 2500)
+  }, [])
+
+  // Flatten to one tile per (project, part). Each tile gets a unique `id` = `${projectId}|${setPartId}`.
+  const flatTiles = useMemo(() => {
+    const tiles = []
+    for (const { project, parts, progress } of projectsData) {
+      for (const part of parts) {
+        tiles.push({
+          ...part,
+          id: `${project.id}|${part.id}`,  // unique tile key
+          _projectId: project.id,
+          _setPartId: part.id,
+          projectName: project.name,
+          _foundQty: progress[String(part.id)] || 0,
+        })
+      }
     }
+    return tiles
+  }, [projectsData])
+
+  // foundMap keyed by tileId for GroupSectionHeader and PartCard
+  const foundMap = useMemo(() => {
+    const m = {}
+    for (const tile of flatTiles) {
+      m[tile.id] = tile._foundQty
+    }
+    return m
+  }, [flatTiles])
+
+  const handlePartUpdate = useCallback(async (tileId, newQty) => {
+    const tile = flatTiles.find((t) => t.id === tileId)
+    if (!tile) return
+    const { _projectId, _setPartId, _foundQty } = tile
+
+    setProjectsData((prev) =>
+      prev.map(({ project, parts, progress }) => {
+        if (project.id !== _projectId) return { project, parts, progress }
+        return { project, parts, progress: { ...progress, [String(_setPartId)]: newQty } }
+      })
+    )
+
+    try {
+      await api.updatePart(_projectId, _setPartId, newQty)
+    } catch {
+      setProjectsData((prev) =>
+        prev.map(({ project, parts, progress }) => {
+          if (project.id !== _projectId) return { project, parts, progress }
+          return { project, parts, progress: { ...progress, [String(_setPartId)]: _foundQty } }
+        })
+      )
+      showToast('Failed to save, try again', true)
+    }
+  }, [flatTiles, showToast])
+
+  const groupedParts = useMemo(() => {
+    let filtered = flatTiles.filter((t) =>
+      (showSpares || !t.is_spare) && (showMinifigs || !t.minifig_num)
+    )
+    const getFound = (t) => foundMap[t.id] || 0
+    if (filter === 'needed') filtered = filtered.filter((t) => getFound(t) < t.quantity)
+    if (filter === 'found')  filtered = filtered.filter((t) => getFound(t) >= t.quantity)
+
+    filtered = [...filtered].sort((a, b) => {
+      if (sortBy === 'name')     return a.part_name.localeCompare(b.part_name)
+      if (sortBy === 'quantity') return b.quantity - a.quantity
+      const aF = getFound(a) >= a.quantity
+      const bF = getFound(b) >= b.quantity
+      if (aF !== bF) return aF ? 1 : -1
+      return a.part_name.localeCompare(b.part_name)
+    })
+
+    if (groupBy === 'none') return [{ key: 'all', label: null, colorRgb: null, parts: filtered }]
+
+    const groupMap = new Map()
+    for (const tile of filtered) {
+      const key = groupBy === 'color' ? String(tile.color_id) : (tile.part_cat_name || 'Other')
+      const label = groupBy === 'color' ? tile.color_name : key
+      const colorRgb = groupBy === 'color' ? tile.color_rgb : null
+      if (!groupMap.has(key)) groupMap.set(key, { key, label, colorRgb, parts: [] })
+      groupMap.get(key).parts.push(tile)
+    }
+    return Array.from(groupMap.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }, [flatTiles, foundMap, showSpares, showMinifigs, filter, groupBy, sortBy])
+
+  const totalShown = useMemo(
+    () => groupedParts.reduce((a, g) => a + g.parts.length, 0), [groupedParts]
+  )
+
+  const nonSpare = useMemo(() => flatTiles.filter((t) => !t.is_spare), [flatTiles])
+  const overallFound  = useMemo(() => nonSpare.reduce((a, t) => a + Math.min(foundMap[t.id] || 0, t.quantity), 0), [nonSpare, foundMap])
+  const overallNeeded = useMemo(() => nonSpare.reduce((a, t) => a + t.quantity, 0), [nonSpare])
+  const pct = overallNeeded > 0 ? Math.round((overallFound / overallNeeded) * 100) : 0
+
+  async function handleRename() {
+    if (!draftName.trim() || draftName === group.name) { setEditingName(false); return }
     try {
       const updated = await api.updateGroup(id, { name: draftName.trim() })
       setGroup((g) => ({ ...g, name: updated.name }))
       setEditingName(false)
     } catch (e) {
-      alert('Failed to rename: ' + e.message)
+      showToast('Failed to rename: ' + e.message, true)
     }
   }
 
@@ -119,21 +209,9 @@ export default function GroupPage() {
       await api.deleteGroup(id)
       navigate('/', { replace: true })
     } catch (e) {
-      alert('Failed to delete: ' + e.message)
+      showToast('Failed to delete: ' + e.message, true)
     }
   }
-
-  const displayedParts = useMemo(() => {
-    let filtered = parts.filter((p) => showSpares || !p.is_spare)
-    if (filter === 'needed') filtered = filtered.filter((p) => p.total_found < p.total_needed)
-    if (filter === 'found') filtered = filtered.filter((p) => p.total_found >= p.total_needed)
-    return filtered
-  }, [parts, showSpares, filter])
-
-  const nonSpare = useMemo(() => parts.filter((p) => !p.is_spare), [parts])
-  const totalFound = useMemo(() => nonSpare.reduce((a, p) => a + Math.min(p.total_found, p.total_needed), 0), [nonSpare])
-  const totalNeeded = useMemo(() => nonSpare.reduce((a, p) => a + p.total_needed, 0), [nonSpare])
-  const pct = totalNeeded > 0 ? Math.round((totalFound / totalNeeded) * 100) : 0
 
   if (loading) {
     return (
@@ -149,9 +227,7 @@ export default function GroupPage() {
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          {error}
-        </div>
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">{error}</div>
       </div>
     )
   }
@@ -160,9 +236,10 @@ export default function GroupPage() {
 
   return (
     <div className="pb-4">
-      {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-20 px-4 pt-4 pb-3">
-        <div className="flex items-start justify-between mb-1">
+      <div className="sticky top-0 bg-white border-b border-gray-200 z-20 px-4 pt-4 pb-3 space-y-2">
+
+        {/* Title */}
+        <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0 mr-2">
             {editingName ? (
               <input
@@ -183,7 +260,7 @@ export default function GroupPage() {
                 {group.name}
               </h1>
             )}
-            <p className="text-sm text-gray-500">{group.projects?.length || 0} projects · {displayedParts.length} part types</p>
+            <p className="text-sm text-gray-500">{group.projects?.length || 0} projects</p>
           </div>
           <button onClick={handleDelete} className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -195,9 +272,9 @@ export default function GroupPage() {
           </button>
         </div>
 
-        {/* Projects chips */}
-        {group.projects && group.projects.length > 0 && (
-          <div className="flex gap-1.5 flex-wrap mb-2">
+        {/* Project chips */}
+        {group.projects?.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
             {group.projects.map((p) => (
               <Link
                 key={p.id}
@@ -210,10 +287,10 @@ export default function GroupPage() {
           </div>
         )}
 
-        {/* Progress */}
-        <div className="mb-2">
+        {/* Overall progress */}
+        <div>
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>{totalFound.toLocaleString()} / {totalNeeded.toLocaleString()} parts found (combined)</span>
+            <span>{overallFound.toLocaleString()} / {overallNeeded.toLocaleString()} parts found (combined)</span>
             <span className="font-semibold text-blue-600">{pct}%</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -221,41 +298,84 @@ export default function GroupPage() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 flex-wrap">
-          {['all', 'needed', 'found'].map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                filter === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
+        {/* Filter chips */}
+        <div className="flex gap-1.5 flex-wrap">
+          {[['all','All'],['needed','Needed'],['found','Found']].map(([key, label]) => (
+            <Chip key={key} label={label} active={filter === key} onClick={() => setFilter(key)} />
           ))}
-          <button
+          <Chip
+            label={showSpares ? 'Hide Spares' : 'Show Spares'}
+            active={showSpares}
             onClick={() => setShowSpares((v) => !v)}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              showSpares ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {showSpares ? 'Hide Spares' : 'Show Spares'}
-          </button>
+            color="purple"
+          />
+          <Chip
+            label={showMinifigs ? 'Hide Minifigs' : 'Show Minifigs'}
+            active={showMinifigs}
+            onClick={() => setShowMinifigs((v) => !v)}
+            color="purple"
+          />
         </div>
-        <p className="text-xs text-gray-400 mt-1">Read-only view — tap a project link above to update progress</p>
+
+        {/* Group by */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 w-12 flex-shrink-0">Group</span>
+          <div className="flex gap-1.5 flex-wrap">
+            {[['none','None'],['color','Color'],['type','Type']].map(([key, label]) => (
+              <Chip key={key} label={label} active={groupBy === key} onClick={() => setGroupBy(key)} />
+            ))}
+          </div>
+        </div>
+
+        {/* Sort by */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 w-12 flex-shrink-0">Sort</span>
+          <div className="flex gap-1.5 flex-wrap">
+            {[['status','Status'],['name','A – Z'],['quantity','Qty']].map(([key, label]) => (
+              <Chip key={key} label={label} active={sortBy === key} onClick={() => setSortBy(key)} />
+            ))}
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-400">
+          {totalShown} tiles shown
+          {groupBy !== 'none' && ` in ${groupedParts.length} ${groupBy === 'color' ? 'colors' : 'types'}`}
+        </p>
       </div>
 
-      {/* Parts grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
-        {displayedParts.map((part, i) => (
-          <AggregatePartCard key={`${part.part_num}-${part.color_id}-${i}`} part={part} />
-        ))}
-      </div>
-
-      {displayedParts.length === 0 && (
+      {/* Parts */}
+      {totalShown === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <p className="text-sm">No parts to show</p>
+        </div>
+      ) : (
+        groupedParts.map((group) => (
+          <div key={group.key}>
+            {group.label && (
+              <GroupSectionHeader group={group} progress={foundMap} />
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
+              {group.parts.map((tile) => (
+                <PartCard
+                  key={tile.id}
+                  part={tile}
+                  foundQty={foundMap[tile.id] || 0}
+                  onUpdate={handlePartUpdate}
+                  projectName={tile.projectName}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+
+      {toast && (
+        <div
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg z-50 ${
+            toast.isError ? 'bg-red-600' : 'bg-gray-800'
+          }`}
+        >
+          {toast.msg}
         </div>
       )}
     </div>

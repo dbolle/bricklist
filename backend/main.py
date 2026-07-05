@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
@@ -10,8 +11,8 @@ from sqlalchemy.orm import Session
 
 import rebrickable
 from database import (
-    Color, Group, PartProgress, Project, SetModel, SetPart, Setting,
-    get_db, init_db,
+    Color, Group, PartProgress, Project, RemovedPartNotification,
+    SetModel, SetPart, Setting, get_db, init_db,
 )
 
 CACHE_MAX_AGE_DAYS = 7
@@ -58,8 +59,30 @@ async def ensure_set_cached(set_num: str, db: Session) -> SetModel:
 
 
 async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetModel:
-    set_data = await rebrickable.get_set(api_key, set_num)
-    parts_data = await rebrickable.get_set_parts(api_key, set_num)
+    set_data, parts_data, categories, minifigs = await asyncio.gather(
+        rebrickable.get_set(api_key, set_num),
+        rebrickable.get_set_parts(api_key, set_num),
+        rebrickable.get_part_categories(api_key),
+        rebrickable.get_set_minifigs(api_key, set_num),
+    )
+
+    # Fetch every minifigure's parts concurrently, then build a flat list of
+    # (part_dict, minifig_num, minifig_name) covering both regular and minifig parts.
+    if minifigs:
+        minifig_parts_lists = await asyncio.gather(
+            *[rebrickable.get_minifig_parts(api_key, mf["fig_num"]) for mf in minifigs]
+        )
+    else:
+        minifig_parts_lists = []
+
+    all_parts: list[tuple[dict, str, str | None]] = [
+        (p, '', None) for p in parts_data
+    ]
+    for mf, mf_parts in zip(minifigs, minifig_parts_lists):
+        for p in mf_parts:
+            scaled = dict(p)
+            scaled["quantity"] = p["quantity"] * mf["quantity"]
+            all_parts.append((scaled, mf["fig_num"], mf["name"]))
 
     db_set = db.get(SetModel, set_num)
     if db_set:
@@ -69,9 +92,8 @@ async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetMo
         db_set.num_parts = set_data.get("num_parts")
         db_set.img_url = set_data.get("img_url")
         db_set.cached_at = datetime.utcnow()
-        for part in list(db_set.parts):
-            db.delete(part)
-        db.flush()
+        # Index existing parts by their unique key so we can upsert
+        existing = {(sp.part_num, sp.color_id, sp.is_spare, sp.minifig_num): sp for sp in db_set.parts}
     else:
         db_set = SetModel(
             set_num=set_num,
@@ -83,23 +105,67 @@ async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetMo
         )
         db.add(db_set)
         db.flush()
+        existing = {}
 
     seen_colors: set[int] = set()
-    for p in parts_data:
+    incoming_keys: set[tuple] = set()
+    for p, mfig_num, mfig_name in all_parts:
         if p["color_id"] not in seen_colors and not db.get(Color, p["color_id"]):
             db.add(Color(color_id=p["color_id"], name=p["color_name"], rgb=p["color_rgb"]))
         seen_colors.add(p["color_id"])
 
-        db.add(SetPart(
-            set_num=set_num,
-            part_num=p["part_num"],
-            part_name=p["part_name"],
-            part_img_url=p.get("part_img_url"),
-            color_id=p["color_id"],
-            quantity=p["quantity"],
-            is_spare=p.get("is_spare", False),
-            element_id=p.get("element_id"),
-        ))
+        cat_id = p.get("part_cat_id")
+        key = (p["part_num"], p["color_id"], p.get("is_spare", False), mfig_num)
+        incoming_keys.add(key)
+
+        if key in existing:
+            # Update in-place — preserves the row id and any linked part_progress
+            sp = existing[key]
+            sp.part_name = p["part_name"]
+            sp.part_img_url = p.get("part_img_url")
+            sp.quantity = p["quantity"]
+            sp.element_id = p.get("element_id")
+            sp.part_cat_id = cat_id
+            sp.part_cat_name = categories.get(cat_id) if cat_id else None
+            sp.minifig_name = mfig_name
+        else:
+            db.add(SetPart(
+                set_num=set_num,
+                part_num=p["part_num"],
+                part_name=p["part_name"],
+                part_img_url=p.get("part_img_url"),
+                color_id=p["color_id"],
+                quantity=p["quantity"],
+                is_spare=p.get("is_spare", False),
+                element_id=p.get("element_id"),
+                part_cat_id=cat_id,
+                part_cat_name=categories.get(cat_id) if cat_id else None,
+                minifig_num=mfig_num,
+                minifig_name=mfig_name,
+            ))
+
+    # Remove parts that no longer exist in the set.
+    # For any that were partially/fully found, save a notification so the user
+    # knows to remove those bricks from their physical bag.
+    for key, sp in existing.items():
+        if key not in incoming_keys:
+            progress_rows = (
+                db.query(PartProgress)
+                .filter(PartProgress.set_part_id == sp.id, PartProgress.found_qty > 0)
+                .all()
+            )
+            for row in progress_rows:
+                db.add(RemovedPartNotification(
+                    project_id=row.project_id,
+                    part_num=sp.part_num,
+                    part_name=sp.part_name,
+                    part_img_url=sp.part_img_url,
+                    color_name=sp.color.name if sp.color else "",
+                    color_rgb=sp.color.rgb if sp.color else "808080",
+                    part_cat_name=sp.part_cat_name,
+                    found_qty=row.found_qty,
+                ))
+            db.delete(sp)
 
     db.commit()
     db.refresh(db_set)
@@ -220,6 +286,10 @@ async def get_set_parts(
                 "quantity": p.quantity,
                 "is_spare": p.is_spare,
                 "element_id": p.element_id,
+                "part_cat_id": p.part_cat_id,
+                "part_cat_name": p.part_cat_name or "",
+                "minifig_num": p.minifig_num,
+                "minifig_name": p.minifig_name or "",
             }
             for p in parts
         ],
@@ -358,6 +428,57 @@ def update_part_progress(
         db.add(row)
     db.commit()
     return {"set_part_id": set_part_id, "found_qty": found_qty, "quantity": part.quantity}
+
+
+# ---------------------------------------------------------------------------
+# Removed-part notifications
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/projects/{project_id}/removed-parts")
+def get_removed_parts(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    rows = (
+        db.query(RemovedPartNotification)
+        .filter(RemovedPartNotification.project_id == project_id)
+        .order_by(RemovedPartNotification.created_at.desc())
+        .all()
+    )
+    return {
+        "notifications": [
+            {
+                "id": r.id,
+                "part_num": r.part_num,
+                "part_name": r.part_name,
+                "part_img_url": r.part_img_url,
+                "color_name": r.color_name,
+                "color_rgb": r.color_rgb,
+                "part_cat_name": r.part_cat_name,
+                "found_qty": r.found_qty,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.delete("/api/removed-parts/{notification_id}", status_code=204)
+def dismiss_removed_part(notification_id: int, db: Session = Depends(get_db)):
+    row = db.get(RemovedPartNotification, notification_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    db.delete(row)
+    db.commit()
+
+
+@app.delete("/api/projects/{project_id}/removed-parts", status_code=204)
+def dismiss_all_removed_parts(project_id: int, db: Session = Depends(get_db)):
+    db.query(RemovedPartNotification).filter(
+        RemovedPartNotification.project_id == project_id
+    ).delete()
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
