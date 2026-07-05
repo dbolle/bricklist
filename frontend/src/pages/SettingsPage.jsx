@@ -199,6 +199,25 @@ export default function SettingsPage() {
       )}
 
       <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800">Backup</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Download a snapshot of the database — all projects, groups, and progress.
+              To restore, replace <code className="bg-gray-100 px-1 rounded">bricklist.db</code> in the data volume with the downloaded file.
+            </p>
+          </div>
+          <a
+            href="/api/backup"
+            download
+            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+          >
+            Download Backup
+          </a>
+        </div>
+      </div>
+
+      <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
         <h2 className="text-base font-semibold text-gray-800 mb-2">About BrickList</h2>
         <p className="text-sm text-gray-500">
           BrickList helps you sort Lego bricks into sets by tracking which parts you've found.

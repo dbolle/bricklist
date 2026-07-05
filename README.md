@@ -20,6 +20,20 @@ docker compose up --build
 
 Open http://localhost:8000, go to **Settings**, and paste in a free [Rebrickable API key](https://rebrickable.com/api/). That's it — the SQLite database lives in the `bricklist_data` Docker volume, so your projects and progress survive container rebuilds.
 
+## Backups
+
+Your projects and sorting progress live in a single SQLite file inside the `bricklist_data` Docker volume. Two ways to back it up:
+
+- **From the UI** — Settings → **Download Backup** streams a consistent snapshot of the database (safe to do while the app is running). Do this before upgrading.
+- **Scheduled/scripted** — copy the file out of the volume:
+
+  ```bash
+  docker run --rm -v bricklist_data:/data -v "$PWD":/backup alpine \
+    cp /data/bricklist.db /backup/bricklist-backup.db
+  ```
+
+To restore, replace `/data/bricklist.db` in the volume with a backup file (with the app stopped) and start the app again.
+
 ## Development
 
 The app is a single container in production: a two-stage Docker build compiles the React frontend, then FastAPI serves both the API and the static files on port 8000.

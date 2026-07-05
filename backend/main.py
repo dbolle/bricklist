@@ -1,19 +1,23 @@
 import asyncio
 import logging
+import os
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 import rebrickable
 from database import (
     Color, Group, PartProgress, Project, RemovedPartNotification,
-    SessionLocal, SetModel, SetPart, Setting, get_db, init_db,
+    SessionLocal, SetModel, SetPart, Setting, engine, get_db, init_db,
 )
 
 CACHE_MAX_AGE_DAYS = 7
@@ -276,6 +280,38 @@ def update_settings(body: SettingsIn, db: Session = Depends(get_db)):
         db.add(Setting(key="rebrickable_api_key", value=body.rebrickable_api_key))
     db.commit()
     return {"rebrickable_api_key": body.rebrickable_api_key}
+
+
+# ---------------------------------------------------------------------------
+# Backup
+# ---------------------------------------------------------------------------
+
+@app.get("/api/backup")
+def download_backup():
+    """Stream a consistent snapshot of the SQLite database.
+
+    VACUUM INTO produces a standalone copy that is safe to take while the app
+    is running (WAL mode) — restoring is just replacing the db file.
+    """
+    fd, path = tempfile.mkstemp(prefix="bricklist-backup-", suffix=".db")
+    os.close(fd)
+    os.remove(path)  # VACUUM INTO requires the target not to exist
+    try:
+        with engine.connect() as conn:
+            conn.execution_options(isolation_level="AUTOCOMMIT").execute(
+                text("VACUUM INTO :path"), {"path": path}
+            )
+    except Exception:
+        if os.path.exists(path):
+            os.remove(path)
+        raise
+    filename = f"bricklist-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+    return FileResponse(
+        path,
+        filename=filename,
+        media_type="application/octet-stream",
+        background=BackgroundTask(os.remove, path),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -647,9 +683,6 @@ def get_group_parts(
 # ---------------------------------------------------------------------------
 # Serve React frontend (must be last)
 # ---------------------------------------------------------------------------
-
-import os
-from fastapi.responses import FileResponse
 
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(FRONTEND_DIST):
