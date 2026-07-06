@@ -763,12 +763,18 @@ def get_group_parts(
 # Serve React frontend (must be last)
 # ---------------------------------------------------------------------------
 
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+FRONTEND_DIST = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 if os.path.isdir(FRONTEND_DIST):
     # Serve hashed static assets (JS/CSS) normally
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
-    # SPA catch-all: any non-API path serves index.html so React Router works on reload
+    # Root-level PWA files (sw.js, manifest.webmanifest, workbox-*.js, icons)
+    # must be served as-is; everything else falls back to index.html so
+    # React Router works on reload.
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        if full_path:
+            file_path = os.path.realpath(os.path.join(FRONTEND_DIST, full_path))
+            if file_path.startswith(FRONTEND_DIST + os.sep) and os.path.isfile(file_path):
+                return FileResponse(file_path)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
