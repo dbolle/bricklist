@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { api } from '../api.js'
 import PartCard from '../components/PartCard.jsx'
+import Toast, { useToast } from '../components/Toast.jsx'
 
 export default function FindPage() {
   const [query, setQuery] = useState('')
@@ -8,13 +9,8 @@ export default function FindPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [searched, setSearched] = useState(false)
-  const [toast, setToast] = useState(null)
   const debounceRef = useRef(null)
-
-  const showToast = useCallback((msg, isError = false) => {
-    setToast({ msg, isError })
-    setTimeout(() => setToast(null), 2500)
-  }, [])
+  const { toast, showToast, dismissToast } = useToast()
 
   const doSearch = useCallback(async (q) => {
     if (q.trim().length < 2) {
@@ -50,18 +46,25 @@ export default function FindPage() {
     debounceRef.current = setTimeout(() => doSearch(q), 350)
   }
 
-  const handlePartUpdate = useCallback(async (tileId, newQty) => {
+  const handlePartUpdateRef = useRef(null)
+  const handlePartUpdate = useCallback(async (tileId, newQty, { silent = false } = {}) => {
     const tile = tiles.find((t) => t.id === tileId)
-    if (!tile) return
+    if (!tile || tile._foundQty === newQty) return
     const prevQty = tile._foundQty
     setTiles((prev) => prev.map((t) => (t.id === tileId ? { ...t, _foundQty: newQty } : t)))
+    if (!silent) {
+      showToast(`${tile.part_name} — ${newQty}/${tile.quantity}`, {
+        undo: () => handlePartUpdateRef.current(tileId, prevQty, { silent: true }),
+      })
+    }
     try {
       await api.updatePart(tile._projectId, tile._setPartId, newQty)
     } catch {
       setTiles((prev) => prev.map((t) => (t.id === tileId ? { ...t, _foundQty: prevQty } : t)))
-      showToast('Failed to save, try again', true)
+      showToast('Failed to save, try again', { isError: true })
     }
   }, [tiles, showToast])
+  handlePartUpdateRef.current = handlePartUpdate
 
   return (
     <div className="p-4">
@@ -123,15 +126,7 @@ export default function FindPage() {
         </div>
       )}
 
-      {toast && (
-        <div
-          className={`fixed bottom-20 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm text-white shadow-lg z-50 ${
-            toast.isError ? 'bg-red-600' : 'bg-gray-800'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   )
 }

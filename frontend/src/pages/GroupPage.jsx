@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import PartCard from '../components/PartCard.jsx'
+import Toast, { useToast } from '../components/Toast.jsx'
 
 function GroupSectionHeader({ group, progress }) {
   const totalNeeded = group.parts.reduce((a, p) => a + p.quantity, 0)
@@ -58,7 +59,6 @@ export default function GroupPage() {
   const [sortBy, setSortBy] = useState('status')
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
-  const [toast, setToast] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -96,10 +96,7 @@ export default function GroupPage() {
     return () => { cancelled = true }
   }, [id])
 
-  const showToast = useCallback((msg, isError = false) => {
-    setToast({ msg, isError })
-    setTimeout(() => setToast(null), 2500)
-  }, [])
+  const { toast, showToast, dismissToast } = useToast()
 
   // Flatten to one tile per (project, part). Each tile gets a unique `id` = `${projectId}|${setPartId}`.
   const flatTiles = useMemo(() => {
@@ -128,10 +125,12 @@ export default function GroupPage() {
     return m
   }, [flatTiles])
 
-  const handlePartUpdate = useCallback(async (tileId, newQty) => {
+  const handlePartUpdateRef = useRef(null)
+  const handlePartUpdate = useCallback(async (tileId, newQty, { silent = false } = {}) => {
     const tile = flatTiles.find((t) => t.id === tileId)
     if (!tile) return
     const { _projectId, _setPartId, _foundQty } = tile
+    if (_foundQty === newQty) return
 
     setProjectsData((prev) =>
       prev.map(({ project, parts, progress }) => {
@@ -139,6 +138,11 @@ export default function GroupPage() {
         return { project, parts, progress: { ...progress, [String(_setPartId)]: newQty } }
       })
     )
+    if (!silent) {
+      showToast(`${tile.part_name} — ${newQty}/${tile.quantity}`, {
+        undo: () => handlePartUpdateRef.current(tileId, _foundQty, { silent: true }),
+      })
+    }
 
     try {
       await api.updatePart(_projectId, _setPartId, newQty)
@@ -149,15 +153,25 @@ export default function GroupPage() {
           return { project, parts, progress: { ...progress, [String(_setPartId)]: _foundQty } }
         })
       )
-      showToast('Failed to save, try again', true)
+      showToast('Failed to save, try again', { isError: true })
     }
   }, [flatTiles, showToast])
+  handlePartUpdateRef.current = handlePartUpdate
+
+  // Ordering uses a snapshot of found counts taken when loading finishes or a
+  // control changes, so completing a part doesn't reshuffle the grid mid-sort.
+  const foundMapRef = useRef(foundMap)
+  foundMapRef.current = foundMap
+  const [orderSnap, setOrderSnap] = useState({})
+  useEffect(() => {
+    if (!loading) setOrderSnap(foundMapRef.current)
+  }, [loading, showSpares, showMinifigs, filter, groupBy, sortBy])
 
   const groupedParts = useMemo(() => {
     let filtered = flatTiles.filter((t) =>
       (showSpares || !t.is_spare) && (showMinifigs || !t.minifig_num)
     )
-    const getFound = (t) => foundMap[t.id] || 0
+    const getFound = (t) => orderSnap[t.id] || 0
     if (filter === 'needed') filtered = filtered.filter((t) => getFound(t) < t.quantity)
     if (filter === 'found')  filtered = filtered.filter((t) => getFound(t) >= t.quantity)
 
@@ -181,7 +195,7 @@ export default function GroupPage() {
       groupMap.get(key).parts.push(tile)
     }
     return Array.from(groupMap.values()).sort((a, b) => a.label.localeCompare(b.label))
-  }, [flatTiles, foundMap, showSpares, showMinifigs, filter, groupBy, sortBy])
+  }, [flatTiles, orderSnap, showSpares, showMinifigs, filter, groupBy, sortBy])
 
   const totalShown = useMemo(
     () => groupedParts.reduce((a, g) => a + g.parts.length, 0), [groupedParts]
@@ -199,7 +213,7 @@ export default function GroupPage() {
       setGroup((g) => ({ ...g, name: updated.name }))
       setEditingName(false)
     } catch (e) {
-      showToast('Failed to rename: ' + e.message, true)
+      showToast('Failed to rename: ' + e.message, { isError: true })
     }
   }
 
@@ -209,7 +223,7 @@ export default function GroupPage() {
       await api.deleteGroup(id)
       navigate('/', { replace: true })
     } catch (e) {
-      showToast('Failed to delete: ' + e.message, true)
+      showToast('Failed to delete: ' + e.message, { isError: true })
     }
   }
 
@@ -369,15 +383,7 @@ export default function GroupPage() {
         ))
       )}
 
-      {toast && (
-        <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg z-50 ${
-            toast.isError ? 'bg-red-600' : 'bg-gray-800'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   )
 }

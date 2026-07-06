@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import PartCard from '../components/PartCard.jsx'
+import Toast, { useToast } from '../components/Toast.jsx'
 
 const FILTER_ALL = 'all'
 const FILTER_NEEDED = 'needed'
@@ -64,7 +65,6 @@ export default function ProjectPage() {
   const [filter, setFilter] = useState(FILTER_ALL)
   const [groupBy, setGroupBy] = useState('none')
   const [sortBy, setSortBy] = useState('status')
-  const [toast, setToast] = useState(null)
   const [editingName, setEditingName] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [removedParts, setRemovedParts] = useState([])
@@ -99,21 +99,29 @@ export default function ProjectPage() {
     return () => { cancelled = true }
   }, [id])
 
-  const showToast = useCallback((msg, isError = false) => {
-    setToast({ msg, isError })
-    setTimeout(() => setToast(null), 2500)
-  }, [])
+  const { toast, showToast, dismissToast } = useToast()
 
-  const handlePartUpdate = useCallback(async (setPartId, newQty) => {
+  const handlePartUpdateRef = useRef(null)
+  const handlePartUpdate = useCallback(async (setPartId, newQty, { silent = false } = {}) => {
     const previous = progress[String(setPartId)] || 0
+    if (previous === newQty) return
     setProgress((prev) => ({ ...prev, [String(setPartId)]: newQty }))
+    if (!silent) {
+      const part = parts.find((p) => p.id === setPartId)
+      if (part) {
+        showToast(`${part.part_name} — ${newQty}/${part.quantity}`, {
+          undo: () => handlePartUpdateRef.current(setPartId, previous, { silent: true }),
+        })
+      }
+    }
     try {
       await api.updatePart(id, setPartId, newQty)
     } catch (e) {
       setProgress((prev) => ({ ...prev, [String(setPartId)]: previous }))
-      showToast('Failed to save, try again', true)
+      showToast('Failed to save, try again', { isError: true })
     }
-  }, [id, progress, showToast])
+  }, [id, progress, parts, showToast])
+  handlePartUpdateRef.current = handlePartUpdate
 
   const handleRename = useCallback(async () => {
     if (!draftName.trim() || draftName === project.name) { setEditingName(false); return }
@@ -122,7 +130,7 @@ export default function ProjectPage() {
       setProject(updated)
       setEditingName(false)
     } catch (e) {
-      showToast('Failed to rename', true)
+      showToast('Failed to rename', { isError: true })
     }
   }, [id, draftName, project, showToast])
 
@@ -132,7 +140,7 @@ export default function ProjectPage() {
       await api.deleteProject(id)
       navigate('/', { replace: true })
     } catch (e) {
-      showToast('Failed to delete', true)
+      showToast('Failed to delete', { isError: true })
     }
   }, [id, project, navigate, showToast])
 
@@ -154,16 +162,28 @@ export default function ProjectPage() {
     }
   }, [id])
 
+  // Ordering uses a snapshot of progress taken when the data loads or a
+  // control changes — completing a part must not reshuffle the grid under
+  // the user's finger mid-sort.
+  const progressRef = useRef(progress)
+  progressRef.current = progress
+  const [orderSnap, setOrderSnap] = useState({})
+  useEffect(() => {
+    setOrderSnap(progressRef.current)
+  }, [parts, showSpares, showMinifigs, filter, groupBy, sortBy])
+
   // Build filtered + sorted + grouped structure
   const groupedParts = useMemo(() => {
+    const snapFound = (p) => orderSnap[String(p.id)] || 0
+
     // 1. Filter
     let filtered = parts.filter((p) =>
       (showSpares || !p.is_spare) && (showMinifigs || !p.minifig_num)
     )
     if (filter === FILTER_NEEDED) {
-      filtered = filtered.filter((p) => (progress[String(p.id)] || 0) < p.quantity)
+      filtered = filtered.filter((p) => snapFound(p) < p.quantity)
     } else if (filter === FILTER_FOUND) {
-      filtered = filtered.filter((p) => (progress[String(p.id)] || 0) >= p.quantity)
+      filtered = filtered.filter((p) => snapFound(p) >= p.quantity)
     }
 
     // 2. Sort
@@ -171,8 +191,8 @@ export default function ProjectPage() {
       if (sortBy === 'name') return a.part_name.localeCompare(b.part_name)
       if (sortBy === 'quantity') return b.quantity - a.quantity
       // 'status': incomplete first, then alphabetical
-      const aFound = (progress[String(a.id)] || 0) >= a.quantity
-      const bFound = (progress[String(b.id)] || 0) >= b.quantity
+      const aFound = snapFound(a) >= a.quantity
+      const bFound = snapFound(b) >= b.quantity
       if (aFound !== bFound) return aFound ? 1 : -1
       return a.part_name.localeCompare(b.part_name)
     })
@@ -200,7 +220,7 @@ export default function ProjectPage() {
 
     // Sort groups alphabetically by label
     return Array.from(groupMap.values()).sort((a, b) => a.label.localeCompare(b.label))
-  }, [parts, progress, showSpares, showMinifigs, filter, groupBy, sortBy])
+  }, [parts, orderSnap, showSpares, showMinifigs, filter, groupBy, sortBy])
 
   const totalShown = useMemo(
     () => groupedParts.reduce((acc, g) => acc + g.parts.length, 0),
@@ -438,16 +458,7 @@ export default function ProjectPage() {
         ))
       )}
 
-      {/* Toast */}
-      {toast && (
-        <div
-          className={`fixed bottom-24 left-1/2 -translate-x-1/2 rounded-xl px-4 py-2 text-sm text-white shadow-lg z-50 ${
-            toast.isError ? 'bg-red-600' : 'bg-gray-800'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   )
 }
