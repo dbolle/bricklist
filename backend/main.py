@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -524,6 +524,69 @@ def update_part_progress(
         db.add(row)
     db.commit()
     return {"set_part_id": set_part_id, "found_qty": found_qty, "quantity": part.quantity}
+
+
+# ---------------------------------------------------------------------------
+# Missing-parts export (Rebrickable-importable CSV: Part,Color,Quantity)
+# ---------------------------------------------------------------------------
+
+def _missing_parts_csv(projects: list[Project], db: Session) -> str:
+    """Aggregate still-missing piece counts by (part_num, color_id).
+
+    Non-spare parts only; found counts are capped at each part's quantity so
+    a shrunken inventory can't produce negative missing counts.
+    """
+    missing: dict[tuple[str, int], int] = {}
+    for project in projects:
+        rows = (
+            db.query(SetPart, PartProgress.found_qty)
+            .outerjoin(PartProgress, and_(
+                PartProgress.set_part_id == SetPart.id,
+                PartProgress.project_id == project.id,
+            ))
+            .filter(SetPart.set_num == project.set_num, SetPart.is_spare == False)
+            .all()
+        )
+        for sp, found_qty in rows:
+            still_needed = sp.quantity - min(found_qty or 0, sp.quantity)
+            if still_needed > 0:
+                key = (sp.part_num, sp.color_id)
+                missing[key] = missing.get(key, 0) + still_needed
+
+    lines = ["Part,Color,Quantity"]
+    for (part_num, color_id), qty in sorted(missing.items()):
+        lines.append(f"{part_num},{color_id},{qty}")
+    return "\n".join(lines) + "\n"
+
+
+def _csv_response(content: str, filename: str) -> Response:
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/projects/{project_id}/missing-parts.csv")
+def export_project_missing_parts(project_id: int, db: Session = Depends(get_db)):
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return _csv_response(
+        _missing_parts_csv([project], db),
+        f"missing-{project.set_num}.csv",
+    )
+
+
+@app.get("/api/groups/{group_id}/missing-parts.csv")
+def export_group_missing_parts(group_id: int, db: Session = Depends(get_db)):
+    group = db.get(Group, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return _csv_response(
+        _missing_parts_csv(list(group.projects), db),
+        f"missing-group-{group.id}.csv",
+    )
 
 
 # ---------------------------------------------------------------------------

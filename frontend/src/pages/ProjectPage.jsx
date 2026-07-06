@@ -292,6 +292,18 @@ export default function ProjectPage() {
             <p className="text-sm text-gray-500 truncate">{project.set_name} · {project.set_num}</p>
             {project.group_name && <p className="text-xs text-blue-600">{project.group_name}</p>}
           </div>
+          <a
+            href={`/api/projects/${id}/missing-parts.csv`}
+            download
+            className="flex-shrink-0 p-2 text-gray-400 hover:text-blue-600 transition-colors"
+            title="Export missing parts (CSV, importable into Rebrickable)"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </a>
           <button
             onClick={handleDelete}
             className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 transition-colors"
