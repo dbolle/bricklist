@@ -3,6 +3,7 @@ import sys
 
 # Point the app at a throwaway database *before* database.py is imported.
 os.environ["DATABASE_URL"] = "sqlite:////tmp/test_bricklist.db"
+os.environ["BACKUP_DIR"] = "/tmp/test_bricklist_backups"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest

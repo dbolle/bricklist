@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, text
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+import backups
 import rebrickable
 from database import (
     Color, Group, PartProgress, Project, RemovedPartNotification,
@@ -22,13 +23,32 @@ from database import (
 
 CACHE_MAX_AGE_DAYS = 7
 
+BACKUP_DIR = os.getenv("BACKUP_DIR", "/data/backups")
+BACKUP_KEEP = int(os.getenv("BACKUP_KEEP", "7"))
+BACKUP_MAX_AGE_SECONDS = 24 * 3600
+_BACKUP_CHECK_INTERVAL_SECONDS = 3600
+
 logger = logging.getLogger("bricklist")
+
+
+async def _auto_backup_loop():
+    while True:
+        try:
+            if backups.snapshot_due(BACKUP_DIR, BACKUP_MAX_AGE_SECONDS):
+                path = backups.create_snapshot(BACKUP_DIR)
+                removed = backups.prune_snapshots(BACKUP_DIR, BACKUP_KEEP)
+                logger.info("Auto-backup written: %s (pruned %d)", path, len(removed))
+        except Exception:
+            logger.exception("Automatic backup failed")
+        await asyncio.sleep(_BACKUP_CHECK_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    backup_task = asyncio.create_task(_auto_backup_loop())
     yield
+    backup_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)

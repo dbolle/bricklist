@@ -51,7 +51,7 @@ docker compose stop
 docker run --rm -v bricklist_bricklist_data:/data -v ~/bricklist-backups:/backup alpine \
   sh -c 'cp /data/bricklist.db* /backup/'
 ```
-There is also a `GET /api/backup` endpoint (Settings → Download Backup) that snapshots via `VACUUM INTO` while the app is running.
+There is also a `GET /api/backup` endpoint (Settings → Download Backup) that snapshots via `VACUUM INTO` while the app is running, and the app itself writes a daily auto-snapshot to `/data/backups/` inside the volume (`backend/backups.py`, newest `BACKUP_KEEP`=7 kept) — so recent restore points exist even if nobody clicked anything.
 
 ## Architecture
 
