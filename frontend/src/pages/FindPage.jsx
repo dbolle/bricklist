@@ -68,14 +68,14 @@ export default function FindPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Find a Part</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">Find a Part</h1>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
         Holding a piece? Search by the number molded on it, or by name, to see which projects need it.
       </p>
 
       <div className="relative mb-4">
         <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500"
           viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
         >
           <circle cx="11" cy="11" r="8" />
@@ -87,26 +87,26 @@ export default function FindPage() {
           onChange={handleChange}
           placeholder="Part number, element ID, or name…"
           autoFocus
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white shadow-sm"
+          className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-900 dark:text-gray-100 shadow-sm"
         />
       </div>
 
-      {loading && <div className="text-center py-8 text-gray-400 text-sm">Searching…</div>}
+      {loading && <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">Searching…</div>}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mb-4">
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-xl p-3 text-sm text-red-700 dark:text-red-300 mb-4">
           {error}
         </div>
       )}
 
       {!loading && searched && tiles.length === 0 && !error && (
-        <div className="text-center py-8 text-gray-400 text-sm">
+        <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">
           No project needs a part matching "{query}"
         </div>
       )}
 
       {!loading && !searched && (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           <div className="text-4xl mb-3">🔎</div>
           <p className="text-sm">e.g. "3001" or "brick 2 x 4"</p>
         </div>

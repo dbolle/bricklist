@@ -6,11 +6,11 @@ function ProgressBar({ found, total }) {
   const pct = total > 0 ? Math.round((found / total) * 100) : 0
   return (
     <div>
-      <div className="flex justify-between text-xs text-gray-500 mb-1">
+      <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
         <span>{found}/{total}</span>
         <span className="font-medium">{pct}%</span>
       </div>
-      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
           style={{ width: `${pct}%` }}
@@ -40,7 +40,7 @@ function ProjectCard({ project, onDelete }) {
   return (
     <Link
       to={`/projects/${project.id}`}
-      className="flex items-center gap-3 bg-white rounded-xl border border-gray-200 p-3 shadow-sm hover:shadow-md transition-shadow active:scale-[0.98]"
+      className="flex items-center gap-3 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-3 shadow-sm hover:shadow-md transition-shadow active:scale-[0.98]"
     >
       <div className="w-14 h-14 flex-shrink-0 bg-gray-100 rounded-lg overflow-hidden">
         {project.set_img_url ? (
@@ -50,8 +50,8 @@ function ProjectCard({ project, onDelete }) {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-900 text-sm truncate">{project.name}</p>
-        <p className="text-xs text-gray-500 truncate">{project.set_name}</p>
+        <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm truncate">{project.name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{project.set_name}</p>
         <div className="mt-1.5">
           <ProgressBar found={project.found_parts} total={project.total_parts} />
         </div>
@@ -59,7 +59,7 @@ function ProjectCard({ project, onDelete }) {
       <button
         onClick={handleDelete}
         disabled={deleting}
-        className="flex-shrink-0 p-1.5 text-gray-300 hover:text-red-400 transition-colors"
+        className="flex-shrink-0 p-1.5 text-gray-300 dark:text-gray-600 hover:text-red-400 transition-colors"
       >
         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
           <polyline points="3 6 5 6 21 6" />
@@ -80,12 +80,12 @@ function GroupCard({ group, projects }) {
 
   return (
     <div
-      className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+      className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
       onClick={() => navigate(`/groups/${group.id}`)}
     >
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-gray-900">{group.name}</h3>
-        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+        <h3 className="font-semibold text-gray-900 dark:text-gray-100">{group.name}</h3>
+        <span className="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
           {groupProjects.length} projects
         </span>
       </div>
@@ -95,12 +95,12 @@ function GroupCard({ group, projects }) {
       {groupProjects.length > 0 && (
         <div className="mt-2 flex gap-1 flex-wrap">
           {groupProjects.slice(0, 3).map((p) => (
-            <span key={p.id} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200">
+            <span key={p.id} className="text-xs bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
               {p.name}
             </span>
           ))}
           {groupProjects.length > 3 && (
-            <span className="text-xs text-gray-400">+{groupProjects.length - 3} more</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">+{groupProjects.length - 3} more</span>
           )}
         </div>
       )}
@@ -154,7 +154,7 @@ export default function HomePage() {
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-xl p-4 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       </div>
@@ -167,8 +167,8 @@ export default function HomePage() {
     <div className="p-4">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">BrickList</h1>
-          <p className="text-sm text-gray-500">{projects.length} projects</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">BrickList</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{projects.length} projects</p>
         </div>
         <button
           onClick={() => navigate('/search')}
@@ -185,8 +185,8 @@ export default function HomePage() {
       {isEmpty && (
         <div className="text-center py-16">
           <div className="text-6xl mb-4">🧱</div>
-          <h2 className="text-lg font-semibold text-gray-700 mb-2">No projects yet</h2>
-          <p className="text-sm text-gray-500 mb-6">Search for a Lego set to get started</p>
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">No projects yet</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Search for a Lego set to get started</p>
           <button
             onClick={() => navigate('/search')}
             className="bg-blue-600 text-white rounded-xl px-6 py-3 text-sm font-medium hover:bg-blue-700"
@@ -198,7 +198,7 @@ export default function HomePage() {
 
       {groupsWithProjects.length > 0 && (
         <section className="mb-6">
-          <h2 className="text-base font-semibold text-gray-700 mb-3">Groups</h2>
+          <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">Groups</h2>
           <div className="space-y-2">
             {groupsWithProjects.map((group) => (
               <GroupCard key={group.id} group={group} projects={projects} />
@@ -209,7 +209,7 @@ export default function HomePage() {
 
       {ungroupedProjects.length > 0 && (
         <section>
-          <h2 className="text-base font-semibold text-gray-700 mb-3">
+          <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">
             {groupsWithProjects.length > 0 ? 'Other Projects' : 'Projects'}
           </h2>
           <div className="space-y-2">

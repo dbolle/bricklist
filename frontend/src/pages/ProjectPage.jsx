@@ -18,16 +18,16 @@ function GroupHeader({ group, progress }) {
   const complete = pct === 100
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-y border-gray-200 mt-1 first:mt-0">
+    <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900 border-y border-gray-200 dark:border-gray-800 mt-1 first:mt-0">
       {group.colorRgb && (
         <div
           className="w-4 h-4 rounded-full flex-shrink-0 border border-black/10"
           style={{ backgroundColor: `#${group.colorRgb}` }}
         />
       )}
-      <span className="font-semibold text-sm text-gray-800 flex-1 truncate">{group.label}</span>
-      <span className="text-xs text-gray-500 tabular-nums">{totalFound}/{totalNeeded}</span>
-      <span className={`text-xs font-semibold tabular-nums w-8 text-right ${complete ? 'text-green-600' : 'text-blue-600'}`}>
+      <span className="font-semibold text-sm text-gray-800 dark:text-gray-200 flex-1 truncate">{group.label}</span>
+      <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{totalFound}/{totalNeeded}</span>
+      <span className={`text-xs font-semibold tabular-nums w-8 text-right ${complete ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'}`}>
         {pct}%
       </span>
     </div>
@@ -43,7 +43,7 @@ function Chip({ label, active, onClick, color }) {
           ? color === 'purple'
             ? 'bg-purple-600 text-white'
             : 'bg-blue-600 text-white'
-          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
       }`}
     >
       {label}
@@ -240,7 +240,7 @@ export default function ProjectPage() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-          <p className="text-sm text-gray-500">Loading parts…</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading parts…</p>
         </div>
       </div>
     )
@@ -249,11 +249,11 @@ export default function ProjectPage() {
   if (error) {
     return (
       <div className="p-4">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-xl p-4 text-sm text-red-700 dark:text-red-300">
           <p className="font-semibold mb-1">Failed to load project</p>
           <p>{error}</p>
           {error.includes('API key') && (
-            <Link to="/settings" className="mt-2 block text-blue-600 underline">Go to Settings</Link>
+            <Link to="/settings" className="mt-2 block text-blue-600 dark:text-blue-400 underline">Go to Settings</Link>
           )}
         </div>
       </div>
@@ -265,7 +265,7 @@ export default function ProjectPage() {
   return (
     <div className="pb-4">
       {/* Sticky header */}
-      <div className="sticky top-0 bg-white border-b border-gray-200 z-20 px-4 pt-4 pb-3 space-y-2">
+      <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-20 px-4 pt-4 pb-3 space-y-2">
 
         {/* Title row */}
         <div className="flex items-start justify-between">
@@ -277,25 +277,25 @@ export default function ProjectPage() {
                 onChange={(e) => setDraftName(e.target.value)}
                 onBlur={handleRename}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleRename() }}
-                className="w-full text-xl font-bold text-gray-900 border-b-2 border-blue-500 focus:outline-none bg-transparent"
+                className="w-full text-xl font-bold text-gray-900 dark:text-gray-100 border-b-2 border-blue-500 focus:outline-none bg-transparent"
                 autoFocus
               />
             ) : (
               <h1
-                className="text-xl font-bold text-gray-900 truncate cursor-pointer hover:text-blue-600"
+                className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
                 onClick={() => setEditingName(true)}
                 title="Tap to rename"
               >
                 {project.name}
               </h1>
             )}
-            <p className="text-sm text-gray-500 truncate">{project.set_name} · {project.set_num}</p>
-            {project.group_name && <p className="text-xs text-blue-600">{project.group_name}</p>}
+            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{project.set_name} · {project.set_num}</p>
+            {project.group_name && <p className="text-xs text-blue-600 dark:text-blue-400">{project.group_name}</p>}
           </div>
           <a
             href={`/api/projects/${id}/missing-parts.csv`}
             download
-            className="flex-shrink-0 p-2 text-gray-400 hover:text-blue-600 transition-colors"
+            className="flex-shrink-0 p-2 text-gray-400 dark:text-gray-500 hover:text-blue-600 transition-colors"
             title="Export missing parts (CSV, importable into Rebrickable)"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -306,7 +306,7 @@ export default function ProjectPage() {
           </a>
           <button
             onClick={handleDelete}
-            className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 transition-colors"
+            className="flex-shrink-0 p-2 text-gray-400 dark:text-gray-500 hover:text-red-500 transition-colors"
             title="Delete project"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -320,11 +320,11 @@ export default function ProjectPage() {
 
         {/* Overall progress */}
         <div>
-          <div className="flex justify-between text-xs text-gray-500 mb-1">
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
             <span>{foundCount.toLocaleString()} / {totalCount.toLocaleString()} parts found</span>
-            <span className="font-semibold text-blue-600">{pct}%</span>
+            <span className="font-semibold text-blue-600 dark:text-blue-400">{pct}%</span>
           </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
           </div>
         </div>
@@ -354,7 +354,7 @@ export default function ProjectPage() {
 
         {/* Group by */}
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-400 w-12 flex-shrink-0">Group</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 w-12 flex-shrink-0">Group</span>
           <div className="flex gap-1.5 flex-wrap">
             {[
               { key: 'none', label: 'None' },
@@ -368,7 +368,7 @@ export default function ProjectPage() {
 
         {/* Sort by */}
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-400 w-12 flex-shrink-0">Sort</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 w-12 flex-shrink-0">Sort</span>
           <div className="flex gap-1.5 flex-wrap">
             {[
               { key: 'status', label: 'Status' },
@@ -380,7 +380,7 @@ export default function ProjectPage() {
           </div>
         </div>
 
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 dark:text-gray-500">
           {totalShown} parts shown
           {groupBy !== 'none' && ` in ${groupedParts.length} ${groupBy === 'color' ? 'colors' : 'types'}`}
         </p>
@@ -388,52 +388,52 @@ export default function ProjectPage() {
 
       {/* Removed-parts notification */}
       {removedParts.length > 0 && (
-        <div className="mx-3 mt-3 rounded-xl border border-amber-300 bg-amber-50 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 bg-amber-100 border-b border-amber-300">
+        <div className="mx-3 mt-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 bg-amber-100 dark:bg-amber-900 border-b border-amber-300 dark:border-amber-800">
             <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 text-amber-700 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-amber-700 dark:text-amber-300 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 <line x1="12" y1="9" x2="12" y2="13" />
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
-              <span className="text-xs font-semibold text-amber-800">
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-200">
                 {removedParts.length} part{removedParts.length !== 1 ? 's' : ''} removed from this set's inventory
               </span>
             </div>
             <button
               onClick={handleDismissAllRemovedParts}
-              className="text-xs text-amber-700 hover:text-amber-900 font-medium underline"
+              className="text-xs text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 font-medium underline"
             >
               Dismiss all
             </button>
           </div>
-          <p className="px-3 pt-2 pb-1 text-xs text-amber-700">
+          <p className="px-3 pt-2 pb-1 text-xs text-amber-700 dark:text-amber-300">
             You had found these — remove them from your bag.
           </p>
-          <div className="divide-y divide-amber-200">
+          <div className="divide-y divide-amber-200 dark:divide-amber-800">
             {removedParts.map((n) => (
               <div key={n.id} className="flex items-center gap-2 px-3 py-2">
                 <div
                   className="w-1 self-stretch rounded-full flex-shrink-0"
                   style={{ backgroundColor: `#${n.color_rgb}` }}
                 />
-                <div className="w-10 h-10 flex-shrink-0 bg-white rounded-lg border border-amber-200 flex items-center justify-center overflow-hidden">
+                <div className="w-10 h-10 flex-shrink-0 bg-white rounded-lg border border-amber-200 dark:border-amber-800 flex items-center justify-center overflow-hidden">
                   {n.part_img_url ? (
                     <img src={n.part_img_url} alt={n.part_name} className="w-full h-full object-contain p-0.5" />
                   ) : (
-                    <span className="text-xs text-gray-400 text-center px-0.5">{n.part_num}</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 text-center px-0.5">{n.part_num}</span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2">{n.part_name}</p>
-                  <p className="text-xs text-gray-500 truncate">{n.color_name}</p>
+                  <p className="text-xs font-medium text-gray-800 dark:text-gray-200 leading-tight line-clamp-2">{n.part_name}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{n.color_name}</p>
                 </div>
-                <span className="flex-shrink-0 text-xs font-semibold text-amber-700 bg-amber-100 border border-amber-300 rounded-full px-2 py-0.5">
+                <span className="flex-shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900 border border-amber-300 dark:border-amber-800 rounded-full px-2 py-0.5">
                   had {n.found_qty}
                 </span>
                 <button
                   onClick={() => handleDismissRemovedPart(n.id)}
-                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-amber-600 hover:bg-amber-200 transition-colors"
+                  className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
                   title="Dismiss"
                 >
                   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
@@ -449,7 +449,7 @@ export default function ProjectPage() {
 
       {/* Parts — flat or grouped */}
       {totalShown === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           <p className="text-sm">No parts to show</p>
         </div>
       ) : (

@@ -83,18 +83,18 @@ export default function SettingsPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Settings</h1>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-4">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-4">
         <div>
-          <h2 className="text-base font-semibold text-gray-800 mb-1">Rebrickable API Key</h2>
-          <p className="text-sm text-gray-500 mb-3">
+          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-1">Rebrickable API Key</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             Get a free API key at{' '}
             <a
               href="https://rebrickable.com/api/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 underline"
+              className="text-blue-600 dark:text-blue-400 underline"
             >
               rebrickable.com/api
             </a>
@@ -107,12 +107,12 @@ export default function SettingsPage() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Paste your API key here"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
               type="button"
               onClick={() => setShowKey((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
             >
               {showKey ? (
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -140,7 +140,7 @@ export default function SettingsPage() {
           <button
             onClick={handleTest}
             disabled={testing || !apiKey}
-            className="flex-1 border border-gray-300 text-gray-700 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {testing ? 'Testing…' : 'Test Connection'}
           </button>
@@ -149,7 +149,7 @@ export default function SettingsPage() {
         {testResult && (
           <div
             className={`rounded-lg p-3 text-sm ${
-              testResult.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'
+              testResult.ok ? 'bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-900' : 'bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-900'
             }`}
           >
             {testResult.ok ? '✓ ' : '✗ '}{testResult.msg}
@@ -158,11 +158,11 @@ export default function SettingsPage() {
       </div>
 
       {cachedSets.length > 0 && (
-        <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 space-y-3">
+        <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-semibold text-gray-800">Cache Management</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Re-fetch part data from Rebrickable (also updates categories)</p>
+              <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Cache Management</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Re-fetch part data from Rebrickable (also updates categories)</p>
             </div>
             <button
               onClick={handleRefreshAll}
@@ -173,21 +173,21 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {cachedSets.map(({ set_num, name }) => {
               const state = refreshing[set_num]
               return (
                 <div key={set_num} className="flex items-center gap-2 py-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{name}</p>
-                    <p className="text-xs text-gray-400">{set_num}</p>
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{name}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">{set_num}</p>
                   </div>
-                  {state === 'ok' && <span className="text-xs text-green-600 font-medium">Updated</span>}
-                  {state === 'error' && <span className="text-xs text-red-600 font-medium">Failed</span>}
+                  {state === 'ok' && <span className="text-xs text-green-600 dark:text-green-400 font-medium">Updated</span>}
+                  {state === 'error' && <span className="text-xs text-red-600 dark:text-red-400 font-medium">Failed</span>}
                   <button
                     onClick={() => handleRefreshSet(set_num)}
                     disabled={state === 'loading' || refreshingAll || !apiKey}
-                    className="flex-shrink-0 px-2.5 py-1 text-xs font-medium border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex-shrink-0 px-2.5 py-1 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {state === 'loading' ? 'Refreshing…' : 'Refresh'}
                   </button>
@@ -198,13 +198,13 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+      <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-gray-800">Backup</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Backup</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Download a snapshot of the database — all projects, groups, and progress.
-              To restore, replace <code className="bg-gray-100 px-1 rounded">bricklist.db</code> in the data volume with the downloaded file.
+              To restore, replace <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">bricklist.db</code> in the data volume with the downloaded file.
             </p>
           </div>
           <a
@@ -217,12 +217,12 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="mt-6 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-        <h2 className="text-base font-semibold text-gray-800 mb-2">About BrickList</h2>
-        <p className="text-sm text-gray-500">
+      <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-2">About BrickList</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           BrickList helps you sort Lego bricks into sets by tracking which parts you've found.
           Part data and images are provided by{' '}
-          <a href="https://rebrickable.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+          <a href="https://rebrickable.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline">
             Rebrickable
           </a>.
         </p>

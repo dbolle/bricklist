@@ -23,7 +23,7 @@ export default function Toast({ toast, onDismiss }) {
   return (
     <div
       className={`fixed bottom-24 left-1/2 -translate-x-1/2 flex items-center gap-3 rounded-xl px-4 py-2 text-sm text-white shadow-lg z-50 max-w-[85vw] ${
-        toast.isError ? 'bg-red-600' : 'bg-gray-800'
+        toast.isError ? 'bg-red-600' : 'bg-gray-800 dark:bg-gray-700'
       }`}
     >
       <span className="truncate">{toast.msg}</span>

@@ -7,7 +7,7 @@ export default function PartCard({ part, foundQty, onUpdate, projectName }) {
   const isComplete = foundQty >= part.quantity
   const isPartial = foundQty > 0 && foundQty < part.quantity
 
-  const numColor = isComplete ? 'text-green-600' : isPartial ? 'text-yellow-600' : 'text-gray-400'
+  const numColor = isComplete ? 'text-green-600 dark:text-green-400' : isPartial ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-500'
 
   const handleDecrement = useCallback((e) => {
     e.stopPropagation()
@@ -43,14 +43,14 @@ export default function PartCard({ part, foundQty, onUpdate, projectName }) {
     if (e.key === 'Escape') { setDraft(null); e.target.blur() }
   }, [])
 
-  let bgClass = 'bg-white'
-  if (isComplete) bgClass = 'bg-green-50'
-  else if (isPartial) bgClass = 'bg-yellow-50'
+  let bgClass = 'bg-white dark:bg-gray-900'
+  if (isComplete) bgClass = 'bg-green-50 dark:bg-green-950'
+  else if (isPartial) bgClass = 'bg-yellow-50 dark:bg-yellow-950'
 
   return (
     <div
       className={`relative rounded-xl shadow-sm border overflow-hidden ${bgClass} ${
-        isComplete ? 'border-green-300' : isPartial ? 'border-yellow-300' : 'border-gray-200'
+        isComplete ? 'border-green-300 dark:border-green-800' : isPartial ? 'border-yellow-300 dark:border-yellow-800' : 'border-gray-200 dark:border-gray-800'
       }`}
       style={{ borderLeftWidth: '4px', borderLeftColor: `#${part.color_rgb}` }}
     >
@@ -78,22 +78,22 @@ export default function PartCard({ part, foundQty, onUpdate, projectName }) {
           />
         ) : null}
         <div className={`${part.part_img_url ? 'hidden' : 'flex'} w-full h-full items-center justify-center`}>
-          <span className="text-xs text-gray-400 text-center px-1">{part.part_num}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500 text-center px-1">{part.part_num}</span>
         </div>
       </div>
 
       {/* Info */}
       <div className="p-2">
-        <p className="text-xs font-medium text-gray-800 leading-tight line-clamp-2">{part.part_name}</p>
-        <p className="text-xs text-gray-500 mt-0.5 truncate">{part.color_name}</p>
+        <p className="text-xs font-medium text-gray-800 dark:text-gray-200 leading-tight line-clamp-2">{part.part_name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{part.color_name}</p>
         {part.minifig_name && (
-          <p className="text-xs text-amber-700 mt-0.5 truncate" title={part.minifig_name}>{part.minifig_name}</p>
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5 truncate" title={part.minifig_name}>{part.minifig_name}</p>
         )}
         {projectName && (
-          <p className="text-xs text-indigo-600 mt-0.5 truncate font-medium">{projectName}</p>
+          <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5 truncate font-medium">{projectName}</p>
         )}
         {part.is_spare && (
-          <span className="text-xs bg-gray-100 text-gray-500 px-1 rounded">spare</span>
+          <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-1 rounded">spare</span>
         )}
 
         {/* Found / total — centered, found is editable */}
@@ -118,13 +118,13 @@ export default function PartCard({ part, foundQty, onUpdate, projectName }) {
           <button
             onClick={handleDecrement}
             disabled={foundQty <= 0}
-            className="w-6 h-6 flex-shrink-0 rounded-full bg-gray-200 hover:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-gray-700 font-bold leading-none"
+            className="w-6 h-6 flex-shrink-0 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-gray-700 dark:text-gray-300 font-bold leading-none"
             tabIndex={-1}
           >
             −
           </button>
 
-          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+          <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${isComplete ? 'bg-green-500' : 'bg-yellow-400'}`}
               style={{ width: `${Math.min(100, (foundQty / part.quantity) * 100)}%` }}
@@ -134,7 +134,7 @@ export default function PartCard({ part, foundQty, onUpdate, projectName }) {
           <button
             onClick={handleIncrement}
             disabled={foundQty >= part.quantity}
-            className="w-6 h-6 flex-shrink-0 rounded-full bg-gray-200 hover:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-gray-700 font-bold leading-none"
+            className="w-6 h-6 flex-shrink-0 rounded-full bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-gray-700 dark:text-gray-300 font-bold leading-none"
             tabIndex={-1}
           >
             +
