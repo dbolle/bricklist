@@ -9,6 +9,10 @@ services:
       - bricklist_data:/data
     environment:
       - DATABASE_URL=sqlite:////data/bricklist.db
+      # BrickScan (photo part identification) runs on the host, not in compose
+      - BRICKSCAN_URL=http://host.docker.internal:8420
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

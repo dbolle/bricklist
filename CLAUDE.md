@@ -78,7 +78,7 @@ This is a single-container Docker app. The Dockerfile is a two-stage build: Node
 **Frontend pages:**
 - `HomePage` — lists all projects and groups
 - `SearchPage` — search Rebrickable and create a new project
-- `FindPage` — global part search (`GET /api/search/parts`): match a piece by part number / element ID / name across all projects and log it from the results
+- `FindPage` — global part search (`GET /api/search/parts`): match a piece by part number / element ID / name across all projects and log it from the results. Also photo identification: the camera button posts to `POST /api/identify`, which proxies to the separate BrickScan service (`backend/brickscan.py`, `BRICKSCAN_URL`, default host port 8420 via `host.docker.internal` in compose) and feeds the top candidate part number into the search
 - `ProjectPage` — the main sorting UI; loads parts + progress, +/− or direct entry per part (optimistic updates), group/sort/filter controls, removed-part notifications
 - `GroupPage` — aggregated part view across all projects in a group
 - `SettingsPage` — Rebrickable API key, per-set cache refresh, database backup download

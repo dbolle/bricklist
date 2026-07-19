@@ -9,7 +9,7 @@ A self-hosted web app for sorting mixed piles of LEGO® bricks back into sets. C
 - **Minifigure parts** — minifig components are included in the parts list and can be toggled on/off
 - **Group, sort, and filter** — group parts by color or category, sort by status/name/quantity, filter to needed or found
 - **Groups** — combine multiple projects (e.g. one storage bin holding several sets) into an aggregated sorting view
-- **Find a part** — holding a mystery piece? Search by the part number molded on it (or element ID or name) to see which of your projects still needs it, and log it right from the results
+- **Find a part** — holding a mystery piece? Photograph it (via a local [BrickScan](http://localhost:8420) service, if you run one) or search by the part number molded on it (or element ID or name) to see which of your projects still needs it, and log it right from the results
 - **Offline-friendly caching** — set inventories are cached in SQLite; stale sets (7+ days) are served instantly and refreshed in the background, so pages never wait on (or fail because of) Rebrickable. If a refresh removes a part you'd already found, you get a notification to pull it back out of the bag
 - **Missing-parts export** — download the still-needed pieces for a project or group as a CSV you can import into Rebrickable to buy replacements
 - **One-tap backups** — download a consistent snapshot of the database from Settings

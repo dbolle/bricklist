@@ -41,6 +41,16 @@ export const api = {
     request('PATCH', `/projects/${projectId}/parts/${setPartId}`, { found_qty: foundQty }),
   searchParts: (q, includeSpares = false) =>
     request('GET', `/search/parts?q=${encodeURIComponent(q)}&include_spares=${includeSpares}`),
+  identifyPart: async (file, limit = 5) => {
+    const form = new FormData()
+    form.append('image', file, file.name || 'photo.jpg')
+    const res = await fetch(`${BASE}/identify?limit=${limit}`, { method: 'POST', body: form })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || `HTTP ${res.status}`)
+    }
+    return res.json()
+  },
   getRemovedParts: (projectId) => request('GET', `/projects/${projectId}/removed-parts`),
   dismissRemovedPart: (notificationId) => request('DELETE', `/removed-parts/${notificationId}`),
   dismissAllRemovedParts: (projectId) => request('DELETE', `/projects/${projectId}/removed-parts`),

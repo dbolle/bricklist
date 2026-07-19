@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
 import backups
+import brickscan
 import rebrickable
 from database import (
     Color, Group, PartProgress, Project, RemovedPartNotification,
@@ -587,6 +588,27 @@ def export_group_missing_parts(group_id: int, db: Session = Depends(get_db)):
         _missing_parts_csv(list(group.projects), db),
         f"missing-group-{group.id}.csv",
     )
+
+
+# ---------------------------------------------------------------------------
+# Photo identification (proxied to the local BrickScan service)
+# ---------------------------------------------------------------------------
+
+MAX_IDENTIFY_IMAGE_BYTES = 15 * 1024 * 1024
+
+
+@app.post("/api/identify")
+async def identify_part(image: UploadFile = File(...), limit: int = 5):
+    contents = await image.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty image upload")
+    if len(contents) > MAX_IDENTIFY_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image too large (15MB max)")
+    candidates = await brickscan.identify(
+        contents, image.filename or "photo.jpg", image.content_type,
+        limit=max(1, min(limit, 10)),
+    )
+    return {"candidates": candidates}
 
 
 # ---------------------------------------------------------------------------
