@@ -124,6 +124,35 @@ class PartProgress(Base):
     )
 
 
+class Bin(Base):
+    """A physical container of unsorted parts being inventoried by photo."""
+    __tablename__ = "bins"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    parts = relationship("BinPart", back_populates="bin", cascade="all, delete-orphan")
+
+
+class BinPart(Base):
+    __tablename__ = "bin_parts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    bin_id = Column(Integer, ForeignKey("bins.id", ondelete="CASCADE"), nullable=False)
+    part_num = Column(String, nullable=False)
+    name = Column(String, nullable=False, default="")
+    category = Column(String, nullable=True)
+    img_url = Column(String, nullable=True)
+    quantity = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    bin = relationship("Bin", back_populates="parts")
+
+    __table_args__ = (
+        UniqueConstraint("bin_id", "part_num"),
+        Index("idx_bin_parts_bin", "bin_id"),
+    )
+
+
 class RemovedPartNotification(Base):
     """Persists a record when a cache refresh removes a part the user had found.
     Displayed in the project page so the user knows to remove it from their bag."""

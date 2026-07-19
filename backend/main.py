@@ -16,10 +16,12 @@ from starlette.background import BackgroundTask
 
 import backups
 import brickscan
+import matching
 import rebrickable
 from database import (
-    Color, Group, PartProgress, Project, RemovedPartNotification,
-    SessionLocal, SetModel, SetPart, Setting, engine, get_db, init_db,
+    Bin, BinPart, Color, Group, PartProgress, Project,
+    RemovedPartNotification, SessionLocal, SetModel, SetPart, Setting,
+    engine, get_db, init_db,
 )
 
 CACHE_MAX_AGE_DAYS = 7
@@ -719,6 +721,168 @@ def dismiss_all_removed_parts(project_id: int, db: Session = Depends(get_db)):
         RemovedPartNotification.project_id == project_id
     ).delete()
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Bins — photo-built inventories of unsorted parts, matched against sets
+# ---------------------------------------------------------------------------
+
+class BinIn(BaseModel):
+    name: str
+
+
+class BinPartIn(BaseModel):
+    part_num: str
+    name: str = ""
+    category: Optional[str] = None
+    img_url: Optional[str] = None
+    quantity: int = 1
+
+
+class BinPartUpdate(BaseModel):
+    quantity: int
+
+
+def bin_part_dict(bp: BinPart) -> dict:
+    return {
+        "id": bp.id,
+        "part_num": bp.part_num,
+        "name": bp.name,
+        "category": bp.category,
+        "img_url": bp.img_url,
+        "quantity": bp.quantity,
+    }
+
+
+def bin_dict(b: Bin, include_parts: bool = False) -> dict:
+    d = {
+        "id": b.id,
+        "name": b.name,
+        "created_at": b.created_at.isoformat(),
+        "part_count": len(b.parts),
+        "piece_count": sum(p.quantity for p in b.parts),
+    }
+    if include_parts:
+        d["parts"] = [bin_part_dict(p) for p in
+                      sorted(b.parts, key=lambda p: p.created_at, reverse=True)]
+    return d
+
+
+def get_bin_or_404(bin_id: int, db: Session) -> Bin:
+    b = db.get(Bin, bin_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="Bin not found")
+    return b
+
+
+@app.get("/api/bins")
+def list_bins(db: Session = Depends(get_db)):
+    bins = db.query(Bin).order_by(Bin.created_at.desc()).all()
+    return {"bins": [bin_dict(b) for b in bins]}
+
+
+@app.post("/api/bins", status_code=201)
+def create_bin(body: BinIn, db: Session = Depends(get_db)):
+    b = Bin(name=body.name)
+    db.add(b)
+    db.commit()
+    db.refresh(b)
+    return bin_dict(b)
+
+
+@app.get("/api/bins/{bin_id}")
+def get_bin(bin_id: int, db: Session = Depends(get_db)):
+    return bin_dict(get_bin_or_404(bin_id, db), include_parts=True)
+
+
+@app.put("/api/bins/{bin_id}")
+def update_bin(bin_id: int, body: BinIn, db: Session = Depends(get_db)):
+    b = get_bin_or_404(bin_id, db)
+    b.name = body.name
+    db.commit()
+    return bin_dict(b)
+
+
+@app.delete("/api/bins/{bin_id}", status_code=204)
+def delete_bin(bin_id: int, db: Session = Depends(get_db)):
+    db.delete(get_bin_or_404(bin_id, db))
+    db.commit()
+
+
+@app.post("/api/bins/{bin_id}/parts")
+def add_bin_part(bin_id: int, body: BinPartIn, db: Session = Depends(get_db)):
+    b = get_bin_or_404(bin_id, db)
+    row = (
+        db.query(BinPart)
+        .filter(BinPart.bin_id == b.id, BinPart.part_num == body.part_num)
+        .first()
+    )
+    if row:
+        row.quantity += max(1, body.quantity)
+        if body.img_url and not row.img_url:
+            row.img_url = body.img_url
+    else:
+        row = BinPart(
+            bin_id=b.id,
+            part_num=body.part_num,
+            name=body.name,
+            category=body.category,
+            img_url=body.img_url,
+            quantity=max(1, body.quantity),
+        )
+        db.add(row)
+    db.commit()
+    db.refresh(row)
+    return bin_part_dict(row)
+
+
+@app.patch("/api/bins/{bin_id}/parts/{bin_part_id}")
+def update_bin_part(bin_id: int, bin_part_id: int, body: BinPartUpdate,
+                    db: Session = Depends(get_db)):
+    row = db.get(BinPart, bin_part_id)
+    if not row or row.bin_id != bin_id:
+        raise HTTPException(status_code=404, detail="Bin part not found")
+    if body.quantity <= 0:
+        db.delete(row)
+        db.commit()
+        return {"deleted": True, "id": bin_part_id}
+    row.quantity = body.quantity
+    db.commit()
+    return bin_part_dict(row)
+
+
+@app.post("/api/bins/{bin_id}/match")
+async def match_bin(bin_id: int, db: Session = Depends(get_db)):
+    """Find which sets are likely in the bin.
+
+    Discovery runs against BrickScan's local catalog; the top candidates are
+    verified against full inventories from the Rebrickable cache. Without a
+    Rebrickable API key the discovery ranking is returned unverified.
+    """
+    b = get_bin_or_404(bin_id, db)
+    if not b.parts:
+        raise HTTPException(status_code=400, detail="Bin has no parts yet")
+
+    candidates = await matching.discover_candidates(b.parts)
+    top = candidates[:matching.MAX_VERIFY_CANDIDATES]
+
+    matches = []
+    verified = True
+    for cand in top:
+        try:
+            db_set = await ensure_set_cached(cand["set_num"], db)
+        except HTTPException as e:
+            if e.status_code == 400:  # no Rebrickable API key configured
+                verified = False
+                break
+            logger.warning("Skipping candidate %s: %s", cand["set_num"], e.detail)
+            continue
+        matches.append({**cand, **matching.score_against_inventory(b.parts, db_set.parts)})
+
+    if verified:
+        matches.sort(key=lambda m: m["set_coverage"], reverse=True)
+        return {"verified": True, "considered": len(candidates), "matches": matches}
+    return {"verified": False, "considered": len(candidates), "matches": top}
 
 
 # ---------------------------------------------------------------------------

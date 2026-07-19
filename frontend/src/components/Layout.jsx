@@ -39,6 +39,15 @@ const BrickIcon = () => (
   </svg>
 )
 
+const BinIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 7h16l-1.5 13a2 2 0 0 1-2 1.8h-9A2 2 0 0 1 5.5 20z" />
+    <path d="M2 7h20" />
+    <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+    <path d="M9 11.5v6M15 11.5v6" />
+  </svg>
+)
+
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -59,6 +68,7 @@ export default function Layout() {
         <NavIcon to="/" label="Home"><HomeIcon /></NavIcon>
         <NavIcon to="/search" label="Sets"><SearchIcon /></NavIcon>
         <NavIcon to="/find" label="Find Part"><BrickIcon /></NavIcon>
+        <NavIcon to="/bins" label="Bins"><BinIcon /></NavIcon>
         <NavIcon to="/settings" label="Settings"><SettingsIcon /></NavIcon>
       </nav>
     </div>

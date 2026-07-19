@@ -55,6 +55,17 @@ export const api = {
   dismissRemovedPart: (notificationId) => request('DELETE', `/removed-parts/${notificationId}`),
   dismissAllRemovedParts: (projectId) => request('DELETE', `/projects/${projectId}/removed-parts`),
 
+  // Bins
+  getBins: () => request('GET', '/bins'),
+  createBin: (data) => request('POST', '/bins', data),
+  getBin: (id) => request('GET', `/bins/${id}`),
+  updateBin: (id, data) => request('PUT', `/bins/${id}`, data),
+  deleteBin: (id) => request('DELETE', `/bins/${id}`),
+  addBinPart: (binId, data) => request('POST', `/bins/${binId}/parts`, data),
+  updateBinPart: (binId, partId, quantity) =>
+    request('PATCH', `/bins/${binId}/parts/${partId}`, { quantity }),
+  matchBin: (binId) => request('POST', `/bins/${binId}/match`),
+
   // Groups
   getGroups: () => request('GET', '/groups'),
   createGroup: (data) => request('POST', '/groups', data),
