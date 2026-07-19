@@ -64,7 +64,7 @@ This is a single-container Docker app. The Dockerfile is a two-stage build: Node
 
 **Data flow for a project:**
 1. User searches for a set → `GET /api/rebrickable/search` proxies to Rebrickable API
-2. User creates a project → set parts (including per-minifig parts) are fetched from Rebrickable and cached in SQLite (`sets`, `set_parts`, `colors` tables). This first fetch is synchronous.
+2. User creates a project → set parts (including per-minifig parts) are fetched and cached in SQLite (`sets`, `set_parts`, `colors` tables). Source preference: BrickScan's local catalog (`GET /api/v1/sets/{id}` + `/parts?include_minifig_parts=true`, ~30ms, no key) with the Rebrickable web API as fallback — the fallback is the only path that needs the API key. This first fetch is synchronous.
 3. Cache is considered stale after 7 days. Stale sets are served immediately and refreshed by a deduplicated background task (`main.py:ensure_set_cached`) — page loads never block on Rebrickable. Refreshes upsert parts in place (preserving progress row IDs) and generate `removed_part_notifications` for any previously-found parts that disappeared.
 4. User taps a part card → `PATCH /api/projects/{id}/parts/{set_part_id}` upserts a `part_progress` row
 

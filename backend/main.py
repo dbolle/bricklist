@@ -85,14 +85,14 @@ _refreshing_sets: set[str] = set()
 _background_tasks: set[asyncio.Task] = set()
 
 
-async def _refresh_set_in_background(set_num: str, api_key: str) -> None:
+async def _refresh_set_in_background(set_num: str) -> None:
     if set_num in _refreshing_sets:
         return
     _refreshing_sets.add(set_num)
     try:
         db = SessionLocal()
         try:
-            await _fetch_and_cache_set(set_num, api_key, db)
+            await _fetch_and_cache_set(set_num, db)
         finally:
             db.close()
     except Exception:
@@ -105,25 +105,70 @@ async def ensure_set_cached(set_num: str, db: Session) -> SetModel:
     """Return the cached set, fetching it only if it has never been cached.
 
     A stale cache is served immediately and refreshed in the background so
-    opening a project never blocks on (or fails because of) Rebrickable.
+    opening a project never blocks on (or fails because of) a source fetch.
     """
     set_num = normalize_set_num(set_num)
     db_set = db.get(SetModel, set_num)
     if db_set is None:
-        api_key = get_api_key(db)
-        return await _fetch_and_cache_set(set_num, api_key, db)
+        return await _fetch_and_cache_set(set_num, db)
 
     if is_stale(db_set.cached_at) and set_num not in _refreshing_sets:
-        setting = db.get(Setting, "rebrickable_api_key")
-        api_key = setting.value if setting else ""
-        if api_key:
-            task = asyncio.create_task(_refresh_set_in_background(set_num, api_key))
-            _background_tasks.add(task)
-            task.add_done_callback(_background_tasks.discard)
+        task = asyncio.create_task(_refresh_set_in_background(set_num))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
     return db_set
 
 
-async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetModel:
+async def _fetch_from_brickscan(set_num: str):
+    """(set_data, all_parts) from BrickScan's local catalog, or None to
+    trigger the Rebrickable fallback (set not in catalog, service down, or
+    a malformed response)."""
+    try:
+        set_data, inventory = await asyncio.gather(
+            brickscan.get_set(set_num),
+            brickscan.get_set_inventory(set_num),
+        )
+        if set_data is None or inventory is None:
+            return None
+
+        all_parts: list[tuple[dict, str, str | None]] = []
+        for r in inventory["parts"]:
+            all_parts.append(({
+                "part_num": r["part_num"],
+                "part_name": r["name"],
+                "part_img_url": r.get("img_url"),
+                "part_cat_id": r.get("part_cat_id"),
+                "part_cat_name": r.get("part_cat_name"),
+                "color_id": r["color_id"],
+                "color_name": r["color_name"],
+                "color_rgb": r["color_rgb"],
+                "quantity": r["quantity"],
+                "is_spare": r.get("is_spare", False),
+                "element_id": r.get("element_id"),
+            }, '', None))
+        for r in inventory.get("minifig_parts", []):
+            all_parts.append(({
+                "part_num": r["part_num"],
+                "part_name": r["name"],
+                "part_img_url": r.get("img_url"),
+                "part_cat_id": r.get("part_cat_id"),
+                "part_cat_name": r.get("part_cat_name"),
+                "color_id": r["color_id"],
+                "color_name": r["color_name"],
+                "color_rgb": r["color_rgb"],
+                "quantity": r["total_quantity"],
+                "is_spare": r.get("is_spare", False),
+                "element_id": r.get("element_id"),
+            }, r["fig_num"], r.get("fig_name")))
+        return set_data, all_parts
+    except (HTTPException, KeyError, ValueError) as e:
+        detail = getattr(e, "detail", repr(e))
+        logger.warning("BrickScan catalog fetch for %s failed (%s); falling back to Rebrickable",
+                       set_num, detail)
+        return None
+
+
+async def _fetch_from_rebrickable(set_num: str, api_key: str):
     set_data, parts_data, categories, minifigs = await asyncio.gather(
         rebrickable.get_set(api_key, set_num),
         rebrickable.get_set_parts(api_key, set_num),
@@ -140,20 +185,37 @@ async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetMo
     else:
         minifig_parts_lists = []
 
-    all_parts: list[tuple[dict, str, str | None]] = [
-        (p, '', None) for p in parts_data
-    ]
+    all_parts: list[tuple[dict, str, str | None]] = []
+    for p in parts_data:
+        p = dict(p)
+        cat_id = p.get("part_cat_id")
+        p["part_cat_name"] = categories.get(cat_id) if cat_id else None
+        all_parts.append((p, '', None))
     for mf, mf_parts in zip(minifigs, minifig_parts_lists):
         for p in mf_parts:
             scaled = dict(p)
             scaled["quantity"] = p["quantity"] * mf["quantity"]
+            cat_id = scaled.get("part_cat_id")
+            scaled["part_cat_name"] = categories.get(cat_id) if cat_id else None
             all_parts.append((scaled, mf["fig_num"], mf["name"]))
+    return set_data, all_parts
+
+
+async def _fetch_and_cache_set(set_num: str, db: Session) -> SetModel:
+    # BrickScan's local catalog is the preferred source: no rate limits, no
+    # internet, ~30ms. Rebrickable is the fallback (and the only path that
+    # needs an API key).
+    fetched = await _fetch_from_brickscan(set_num)
+    if fetched is None:
+        fetched = await _fetch_from_rebrickable(set_num, get_api_key(db))
+    set_data, all_parts = fetched
 
     db_set = db.get(SetModel, set_num)
     if db_set:
         db_set.name = set_data["name"]
         db_set.year = set_data.get("year")
-        db_set.theme_id = set_data.get("theme_id")
+        if set_data.get("theme_id") is not None:  # catalog source has no theme id
+            db_set.theme_id = set_data.get("theme_id")
         db_set.num_parts = set_data.get("num_parts")
         db_set.img_url = set_data.get("img_url")
         db_set.cached_at = datetime.utcnow()
@@ -191,7 +253,7 @@ async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetMo
             sp.quantity = p["quantity"]
             sp.element_id = p.get("element_id")
             sp.part_cat_id = cat_id
-            sp.part_cat_name = categories.get(cat_id) if cat_id else None
+            sp.part_cat_name = p.get("part_cat_name")
             sp.minifig_name = mfig_name
         else:
             db.add(SetPart(
@@ -204,7 +266,7 @@ async def _fetch_and_cache_set(set_num: str, api_key: str, db: Session) -> SetMo
                 is_spare=p.get("is_spare", False),
                 element_id=p.get("element_id"),
                 part_cat_id=cat_id,
-                part_cat_name=categories.get(cat_id) if cat_id else None,
+                part_cat_name=p.get("part_cat_name"),
                 minifig_num=mfig_num,
                 minifig_name=mfig_name,
             ))
@@ -398,8 +460,7 @@ async def get_set_parts(
 @app.post("/api/sets/{set_num}/refresh")
 async def refresh_set(set_num: str, db: Session = Depends(get_db)):
     set_num = normalize_set_num(set_num)
-    api_key = get_api_key(db)
-    db_set = await _fetch_and_cache_set(set_num, api_key, db)
+    db_set = await _fetch_and_cache_set(set_num, db)
     return set_to_dict(db_set)
 
 

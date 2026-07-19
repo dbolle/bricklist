@@ -452,7 +452,7 @@ export default function BinPage() {
 
         {matching && (
           <p className="text-xs text-center text-gray-400 dark:text-gray-500">
-            Searching catalog and verifying against Rebrickable — first run can take a minute…
+            Searching the catalog and verifying set inventories…
           </p>
         )}
 
@@ -460,7 +460,7 @@ export default function BinPage() {
           <div className="space-y-2">
             {!matchResult.verified && matchResult.matches.length > 0 && (
               <div className="bg-amber-50 dark:bg-amber-950 border border-amber-300 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-200">
-                Showing unverified candidates — add a Rebrickable API key in Settings to verify matches against full set inventories.
+                Showing unverified candidates — the local catalog couldn't verify these; check BrickScan, or add a Rebrickable API key in Settings as a fallback.
               </div>
             )}
             {matchResult.matches.map((m) => (

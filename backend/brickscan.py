@@ -15,6 +15,46 @@ BRICKSCAN_URL = os.getenv("BRICKSCAN_URL", "http://localhost:8420")
 _transport: httpx.AsyncBaseTransport | None = None
 
 
+async def get_set(set_num: str) -> dict | None:
+    """Set metadata from BrickScan's local catalog; None if not in catalog."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0, transport=_transport) as client:
+            resp = await client.get(f"{BRICKSCAN_URL}/api/v1/sets/{set_num}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"BrickScan unreachable: {e}")
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"BrickScan error: {resp.status_code}")
+    r = resp.json()
+    return {
+        "set_num": r["set_num"],
+        "name": r["name"],
+        "year": r.get("year"),
+        "theme_id": None,  # catalog exposes theme name, not Rebrickable theme id
+        "num_parts": r.get("num_parts"),
+        "img_url": r.get("img_url"),
+    }
+
+
+async def get_set_inventory(set_num: str) -> dict | None:
+    """Full color-level inventory (incl. spares and minifig parts) from the
+    local catalog; None if the set isn't in the catalog."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0, transport=_transport) as client:
+            resp = await client.get(
+                f"{BRICKSCAN_URL}/api/v1/sets/{set_num}/parts",
+                params={"include_minifig_parts": "true"},
+            )
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"BrickScan unreachable: {e}")
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"BrickScan error: {resp.status_code}")
+    return resp.json()
+
+
 async def get_part_sets(part_num: str, limit: int = 100) -> dict | None:
     """Which sets contain a part, from BrickScan's local Rebrickable catalog.
 

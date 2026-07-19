@@ -28,7 +28,7 @@ def test_stale_cache_served_even_if_refresh_would_fail(client, db, monkeypatch):
     make_stale(db)
     set_api_key(db)
 
-    async def exploding_fetch(set_num, api_key, session):
+    async def exploding_fetch(set_num, session):
         raise RuntimeError("rebrickable is down")
 
     monkeypatch.setattr(main, "_fetch_and_cache_set", exploding_fetch)
@@ -45,7 +45,7 @@ def test_stale_cache_schedules_background_refresh(client, db, monkeypatch):
 
     calls = []
 
-    async def recording_fetch(set_num, api_key, session):
+    async def recording_fetch(set_num, session):
         calls.append(set_num)
         return db.get(database.SetModel, set_num)
 
@@ -64,7 +64,7 @@ def test_fresh_cache_does_not_refresh(client, db, monkeypatch):
     seed_set(db, parts=((3, False),))
     set_api_key(db)
 
-    async def exploding_fetch(set_num, api_key, session):
+    async def exploding_fetch(set_num, session):
         raise AssertionError("must not fetch a fresh set")
 
     monkeypatch.setattr(main, "_fetch_and_cache_set", exploding_fetch)
@@ -73,23 +73,26 @@ def test_fresh_cache_does_not_refresh(client, db, monkeypatch):
     assert resp.status_code == 200
 
 
-def test_stale_cache_without_api_key_skips_refresh(client, db, monkeypatch):
-    """No key configured: serve the cache silently instead of erroring."""
+def test_stale_cache_refreshes_even_without_api_key(client, db, monkeypatch):
+    """No key configured: still serve the cache and schedule a refresh —
+    the BrickScan catalog source needs no key."""
     seed_set(db, parts=((3, False),))
     make_stale(db)
     set_api_key(db, value="")
 
     calls = []
 
-    async def recording_fetch(set_num, api_key, session):
+    async def recording_fetch(set_num, session):
         calls.append(set_num)
 
     monkeypatch.setattr(main, "_fetch_and_cache_set", recording_fetch)
 
     resp = client.get("/api/sets/1234-1/parts")
     assert resp.status_code == 200
-    time.sleep(0.1)
-    assert calls == []
+    deadline = time.time() + 2
+    while not calls and time.time() < deadline:
+        time.sleep(0.02)
+    assert calls == ["1234-1"]
 
 
 def test_uncached_set_fetched_synchronously(client, db, monkeypatch):
@@ -97,7 +100,7 @@ def test_uncached_set_fetched_synchronously(client, db, monkeypatch):
     set_api_key(db)
     calls = []
 
-    async def creating_fetch(set_num, api_key, session):
+    async def creating_fetch(set_num, session):
         calls.append(set_num)
         db_set = database.SetModel(set_num=set_num, name="Fetched Set")
         session.add(db_set)
