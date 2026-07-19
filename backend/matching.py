@@ -75,10 +75,17 @@ def score_against_inventory(bin_parts: list[BinPart], set_parts: list[SetPart]) 
     set_total = sum(set_qty.values())
 
     matched = sum(min(p.quantity, set_qty.get(p.part_num, 0)) for p in bin_parts)
+    bin_coverage = matched / bin_total if bin_total else 0.0
+    set_coverage = matched / set_total if set_total else 0.0
     return {
         "matched_pieces": matched,
         "bin_pieces": bin_total,
         "set_pieces": set_total,
-        "bin_coverage": matched / bin_total if bin_total else 0.0,
-        "set_coverage": matched / set_total if set_total else 0.0,
+        "bin_coverage": bin_coverage,
+        "set_coverage": set_coverage,
+        # Geometric mean balances "how much of the set is here" against "how
+        # much of the bin this explains" — set_coverage alone favors small
+        # sets that coincidentally share a few pieces, bin_coverage alone
+        # favors huge sets full of common bricks.
+        "match_score": (bin_coverage * set_coverage) ** 0.5,
     }

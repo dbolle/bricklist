@@ -880,7 +880,7 @@ async def match_bin(bin_id: int, db: Session = Depends(get_db)):
         matches.append({**cand, **matching.score_against_inventory(b.parts, db_set.parts)})
 
     if verified:
-        matches.sort(key=lambda m: m["set_coverage"], reverse=True)
+        matches.sort(key=lambda m: m["match_score"], reverse=True)
         return {"verified": True, "considered": len(candidates), "matches": matches}
     return {"verified": False, "considered": len(candidates), "matches": top}
 
