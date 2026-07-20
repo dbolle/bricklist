@@ -947,7 +947,11 @@ async def match_bin(bin_id: int, db: Session = Depends(get_db)):
     if not b.parts:
         raise HTTPException(status_code=400, detail="Bin has no parts yet")
 
-    candidates, families = await matching.discover_candidates(b.parts)
+    discovery = await matching.discover_candidates(b.parts)
+    candidates = discovery["candidates"]
+    families = discovery["families"]
+    rarest = discovery["rarest_num_sets"]
+    weak = rarest is None or rarest > matching.WEAK_DISCOVERY_NUM_SETS
     top = candidates[:matching.MAX_VERIFY_CANDIDATES]
 
     matches = []
@@ -966,8 +970,12 @@ async def match_bin(bin_id: int, db: Session = Depends(get_db)):
 
     if verified:
         matches.sort(key=lambda m: m["match_score"], reverse=True)
-        return {"verified": True, "considered": len(candidates), "matches": matches}
-    return {"verified": False, "considered": len(candidates), "matches": top}
+        return {"verified": True, "considered": len(candidates),
+                "weak_discovery": weak, "rarest_num_sets": rarest,
+                "matches": matches}
+    return {"verified": False, "considered": len(candidates),
+            "weak_discovery": weak, "rarest_num_sets": rarest,
+            "matches": top}
 
 
 # ---------------------------------------------------------------------------

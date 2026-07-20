@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import Toast, { useToast } from '../components/Toast.jsx'
 
+// Below this identification confidence, never auto-add — make the user pick.
+const MIN_AUTO_ADD_SCORE = 0.5
+
 function CandidateChip({ candidate, active, onClick }) {
   return (
     <button
@@ -170,8 +173,20 @@ export default function BinPage() {
         return
       }
       setCandidates(found)
-      setActiveCandidate(found[0].part_num)
-      await addCandidate(found[0])
+      lastAddRef.current = null
+      const top = found[0]
+      if ((top.score ?? 0) >= MIN_AUTO_ADD_SCORE) {
+        setActiveCandidate(top.part_num)
+        await addCandidate(top)
+      } else {
+        // Low confidence: never silently pollute the inventory — make the
+        // user pick from the chips instead.
+        setActiveCandidate(null)
+        showToast(
+          `Low confidence (${Math.round((top.score ?? 0) * 100)}%) — tap the correct match below`,
+          { isError: true }
+        )
+      }
     } catch (err) {
       showToast('Identify failed: ' + err.message, { isError: true })
     } finally {
@@ -190,9 +205,9 @@ export default function BinPage() {
       }
       setActiveCandidate(candidate.part_num)
       await addCandidate(candidate, { silent: true })
-      showToast(`Swapped to ${candidate.name}`)
+      showToast(last ? `Swapped to ${candidate.name}` : `+ ${candidate.name} added`)
     } catch (err) {
-      showToast('Failed to swap: ' + err.message, { isError: true })
+      showToast('Failed to save: ' + err.message, { isError: true })
     }
   }, [id, activeCandidate, addCandidate, upsertRow, removeRow, showToast])
 
@@ -375,9 +390,11 @@ export default function BinPage() {
           className="hidden"
         />
 
-        {candidates.length > 1 && (
+        {(candidates.length > 1 || (candidates.length === 1 && activeCandidate === null)) && (
           <div>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Not right? Tap the correct match:</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
+              {activeCandidate === null ? 'Pick the correct match:' : 'Not right? Tap the correct match:'}
+            </p>
             <div className="flex gap-2 overflow-x-auto pb-1">
               {candidates.map((c) => (
                 <CandidateChip
@@ -458,6 +475,11 @@ export default function BinPage() {
 
         {matchResult && (
           <div className="space-y-2">
+            {matchResult.weak_discovery && (
+              <div className="bg-amber-50 dark:bg-amber-950 border border-amber-300 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-200">
+                No distinctive parts in this bin yet — every piece photographed so far appears in hundreds of sets, so these matches are unreliable. Photograph printed, specialized, or unusual pieces to sharpen the results.
+              </div>
+            )}
             {!matchResult.verified && matchResult.matches.length > 0 && (
               <div className="bg-amber-50 dark:bg-amber-950 border border-amber-300 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-800 dark:text-amber-200">
                 Showing unverified candidates — the local catalog couldn't verify these; check BrickScan, or add a Rebrickable API key in Settings as a fallback.

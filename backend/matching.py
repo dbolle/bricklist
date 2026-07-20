@@ -29,6 +29,9 @@ DISCOVERY_SETS_PER_PART = 100
 MAX_VERIFY_CANDIDATES = 8
 RELATIONSHIP_TYPES = {"mold", "print", "alternate"}
 FAMILY_CAP = 6  # base part + up to 5 relatives; huge families = common molds = no signal
+# A bin whose rarest part family still appears in this many sets has no
+# discriminative signal — candidates would be recency-biased noise.
+WEAK_DISCOVERY_NUM_SETS = 300
 _DISCOVERY_CONCURRENCY = 8
 
 
@@ -55,11 +58,13 @@ def _family(part_num: str, info: dict | None) -> list[str]:
     return fam
 
 
-async def discover_candidates(bin_parts: list[BinPart]) -> tuple[list[dict], dict[str, list[str]]]:
+async def discover_candidates(bin_parts: list[BinPart]) -> dict:
     """Rank candidate sets by IDF-weighted overlap with the bin's parts.
 
-    Returns (candidates sorted best-first, families keyed by bin part_num)
-    so verification can reuse the same family expansion.
+    Returns {"candidates": sorted best-first, "families": {bin part_num:
+    family}, "rarest_num_sets": int | None} — families let verification
+    reuse the same expansion; rarest_num_sets powers the weak-discovery
+    honesty signal.
     """
     primary = await _lookup_many([p.part_num for p in bin_parts])
 
@@ -74,6 +79,7 @@ async def discover_candidates(bin_parts: list[BinPart]) -> tuple[list[dict], dic
     lookups = {**primary, **secondary}
 
     candidates: dict[str, dict] = {}
+    rarest_num_sets: int | None = None
     for p in bin_parts:
         infos = [lookups.get(f) for f in families[p.part_num]]
         infos = [i for i in infos if i and i["num_sets"]]
@@ -81,7 +87,10 @@ async def discover_candidates(bin_parts: list[BinPart]) -> tuple[list[dict], dic
             continue
         # One logical part per family: rarest member sets the weight, and a
         # set is credited once even if it contains several family variants.
-        weight = 1.0 / min(i["num_sets"] for i in infos)
+        family_num_sets = min(i["num_sets"] for i in infos)
+        if rarest_num_sets is None or family_num_sets < rarest_num_sets:
+            rarest_num_sets = family_num_sets
+        weight = 1.0 / family_num_sets
         seen: set[str] = set()
         for info in infos:
             for s in info["sets"]:
@@ -102,7 +111,11 @@ async def discover_candidates(bin_parts: list[BinPart]) -> tuple[list[dict], dic
 
     ranked = sorted(candidates.values(),
                     key=lambda c: c["candidate_score"], reverse=True)
-    return ranked, families
+    return {
+        "candidates": ranked,
+        "families": families,
+        "rarest_num_sets": rarest_num_sets,
+    }
 
 
 def score_against_inventory(bin_parts: list[BinPart], set_parts: list[SetPart],
