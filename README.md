@@ -28,7 +28,7 @@ Open http://localhost:8000, go to **Settings**, and paste in a free [Rebrickable
 
 Your projects and sorting progress live in a single SQLite file inside a named Docker volume.
 
-- **Automatic** — the app snapshots the database daily into `/data/backups/` inside the volume (newest 7 kept, tunable via `BACKUP_KEEP`). This protects against software problems — a bad upgrade can cost at most a day of sorting.
+- **Automatic** — the app snapshots the database daily into `/data/backups/` inside the volume (newest 7 kept, tunable via `BACKUP_KEEP`), promotes one snapshot per calendar month to a monthly tier (newest 12 kept, `BACKUP_KEEP_MONTHLY`), and mirrors both tiers to the `/backups-mirror` bind mount (`~/bricklist-backups` by default — point it at a NAS or second disk in `docker-compose.yml` for true off-box protection). Dailies cover bad upgrades; monthlies cover corruption noticed late; the mirror covers volume or disk loss.
 - **From the UI** — Settings → **Download Backup** streams a consistent snapshot of the database (safe to do while the app is running) to your device.
 - **Scheduled/scripted** — copy the file out of the volume (Compose prefixes the volume name with the project, so it's `bricklist_bricklist_data` by default):
 

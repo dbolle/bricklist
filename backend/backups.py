@@ -6,6 +6,7 @@ failure are documented in the README.
 """
 import os
 import re
+import shutil
 import time
 from datetime import datetime
 
@@ -14,6 +15,10 @@ from sqlalchemy import text
 from database import engine
 
 SNAPSHOT_PATTERN = re.compile(r"^bricklist-auto-\d{8}-\d{6}\.db$")
+MONTHLY_PATTERN = re.compile(r"^bricklist-monthly-\d{6}\.db$")
+
+# Last run outcome, surfaced by /api/diagnostics
+last_run: dict | None = None
 
 
 def create_snapshot(backup_dir: str) -> str:
@@ -37,6 +42,50 @@ def prune_snapshots(backup_dir: str, keep: int) -> list[str]:
     for name in to_remove:
         os.remove(os.path.join(backup_dir, name))
     return to_remove
+
+
+def ensure_monthly(backup_dir: str, keep_monthly: int) -> str | None:
+    """Promote the newest daily to a monthly snapshot once per calendar month.
+
+    A subtle-corruption bug noticed after the daily rotation window would
+    otherwise poison every restore point; monthlies extend the horizon to a
+    year. Returns the created path, or None if this month already has one.
+    """
+    month = datetime.now().strftime("%Y%m")
+    name = f"bricklist-monthly-{month}.db"
+    path = os.path.join(backup_dir, name)
+    if os.path.exists(path):
+        return None
+    dailies = sorted(f for f in os.listdir(backup_dir) if SNAPSHOT_PATTERN.match(f))
+    if not dailies:
+        return None
+    shutil.copy2(os.path.join(backup_dir, dailies[-1]), path)
+    monthlies = sorted(f for f in os.listdir(backup_dir) if MONTHLY_PATTERN.match(f))
+    for old in monthlies[:-keep_monthly] if keep_monthly > 0 else monthlies:
+        os.remove(os.path.join(backup_dir, old))
+    return path
+
+
+def mirror_snapshots(backup_dir: str, mirror_dir: str, keep: int, keep_monthly: int) -> int:
+    """Copy snapshots to a second mount and apply the same retention there.
+
+    The mirror directory is expected to be a bind mount pointing outside the
+    data volume (ideally another disk or NAS) so a volume or disk failure
+    doesn't take the backups with it. Returns the number of files copied.
+    """
+    os.makedirs(mirror_dir, exist_ok=True)
+    copied = 0
+    for pattern, keep_n in ((SNAPSHOT_PATTERN, keep), (MONTHLY_PATTERN, keep_monthly)):
+        names = sorted(f for f in os.listdir(backup_dir) if pattern.match(f))
+        for name in names:
+            dest = os.path.join(mirror_dir, name)
+            if not os.path.exists(dest):
+                shutil.copy2(os.path.join(backup_dir, name), dest)
+                copied += 1
+        mirrored = sorted(f for f in os.listdir(mirror_dir) if pattern.match(f))
+        for old in mirrored[:-keep_n] if keep_n > 0 else mirrored:
+            os.remove(os.path.join(mirror_dir, old))
+    return copied
 
 
 def snapshot_due(backup_dir: str, max_age_seconds: float) -> bool:

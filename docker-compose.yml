@@ -7,6 +7,9 @@ services:
       - "8000:8000"
     volumes:
       - bricklist_data:/data
+      # Backup mirror: point this at another disk or NAS mount for true
+      # off-box protection; snapshots are copied here automatically.
+      - ~/bricklist-backups:/backups-mirror
     environment:
       - DATABASE_URL=sqlite:////data/bricklist.db
       # BrickScan (photo part identification) runs on the host, not in compose

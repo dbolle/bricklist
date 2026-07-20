@@ -28,21 +28,44 @@ CACHE_MAX_AGE_DAYS = 7
 
 BACKUP_DIR = os.getenv("BACKUP_DIR", "/data/backups")
 BACKUP_KEEP = int(os.getenv("BACKUP_KEEP", "7"))
+BACKUP_KEEP_MONTHLY = int(os.getenv("BACKUP_KEEP_MONTHLY", "12"))
+BACKUP_MIRROR_DIR = os.getenv("BACKUP_MIRROR_DIR", "/backups-mirror")
 BACKUP_MAX_AGE_SECONDS = 24 * 3600
 _BACKUP_CHECK_INTERVAL_SECONDS = 3600
 
 logger = logging.getLogger("bricklist")
 
 
+def _run_backup_cycle() -> None:
+    status: dict = {"at": datetime.utcnow().isoformat(), "ok": True}
+    try:
+        if backups.snapshot_due(BACKUP_DIR, BACKUP_MAX_AGE_SECONDS):
+            path = backups.create_snapshot(BACKUP_DIR)
+            removed = backups.prune_snapshots(BACKUP_DIR, BACKUP_KEEP)
+            status["snapshot"] = os.path.basename(path)
+            logger.info("Auto-backup written: %s (pruned %d)", path, len(removed))
+        monthly = backups.ensure_monthly(BACKUP_DIR, BACKUP_KEEP_MONTHLY)
+        if monthly:
+            status["monthly"] = os.path.basename(monthly)
+            logger.info("Monthly backup promoted: %s", monthly)
+        # Mirror only when the mount exists — a bind mount pointed at another
+        # disk/NAS; skipping silently would hide a broken mount, so record it.
+        if os.path.isdir(BACKUP_MIRROR_DIR):
+            copied = backups.mirror_snapshots(
+                BACKUP_DIR, BACKUP_MIRROR_DIR, BACKUP_KEEP, BACKUP_KEEP_MONTHLY)
+            status["mirrored"] = copied
+        else:
+            status["mirror_missing"] = True
+    except Exception as e:
+        status["ok"] = False
+        status["error"] = repr(e)
+        logger.exception("Automatic backup failed")
+    backups.last_run = status
+
+
 async def _auto_backup_loop():
     while True:
-        try:
-            if backups.snapshot_due(BACKUP_DIR, BACKUP_MAX_AGE_SECONDS):
-                path = backups.create_snapshot(BACKUP_DIR)
-                removed = backups.prune_snapshots(BACKUP_DIR, BACKUP_KEEP)
-                logger.info("Auto-backup written: %s (pruned %d)", path, len(removed))
-        except Exception:
-            logger.exception("Automatic backup failed")
+        _run_backup_cycle()
         await asyncio.sleep(_BACKUP_CHECK_INTERVAL_SECONDS)
 
 
