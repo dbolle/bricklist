@@ -1,15 +1,38 @@
 const BASE = '/api'
 
+const PIN_KEY = 'bricklist_pin'
+
+export function storePin(pin) {
+  localStorage.setItem(PIN_KEY, pin)
+  // Cookie lets plain <a href> downloads (backup, missing-parts CSV) pass the guard
+  document.cookie = `bricklist_pin=${encodeURIComponent(pin)}; path=/; max-age=31536000; SameSite=Lax`
+}
+
+export function clearPin() {
+  localStorage.removeItem(PIN_KEY)
+  document.cookie = 'bricklist_pin=; path=/; max-age=0; SameSite=Lax'
+}
+
+function pinHeaders() {
+  const pin = localStorage.getItem(PIN_KEY)
+  return pin ? { 'X-BrickList-Pin': pin } : {}
+}
+
+function notifyLocked() {
+  window.dispatchEvent(new CustomEvent('bricklist:locked'))
+}
+
 async function request(method, path, body) {
   const opts = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...pinHeaders() },
   }
   if (body !== undefined) {
     opts.body = JSON.stringify(body)
   }
   const res = await fetch(`${BASE}${path}`, opts)
   if (!res.ok) {
+    if (res.status === 401) notifyLocked()
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || `HTTP ${res.status}`)
   }
@@ -21,6 +44,11 @@ export const api = {
   // Settings
   getSettings: () => request('GET', '/settings'),
   saveSettings: (data) => request('PUT', '/settings', data),
+
+  // Security
+  verifyPin: (pin) => request('POST', '/security/pin/verify', { pin }),
+  setPin: (newPin, currentPin) =>
+    request('POST', '/security/pin', { new_pin: newPin, current_pin: currentPin }),
 
   // Search
   searchSets: (q) => request('GET', `/rebrickable/search?q=${encodeURIComponent(q)}`),
@@ -44,8 +72,13 @@ export const api = {
   identifyPart: async (file, limit = 5) => {
     const form = new FormData()
     form.append('image', file, file.name || 'photo.jpg')
-    const res = await fetch(`${BASE}/identify?limit=${limit}`, { method: 'POST', body: form })
+    const res = await fetch(`${BASE}/identify?limit=${limit}`, {
+      method: 'POST',
+      headers: pinHeaders(),
+      body: form,
+    })
     if (!res.ok) {
+      if (res.status === 401) notifyLocked()
       const err = await res.json().catch(() => ({ detail: res.statusText }))
       throw new Error(err.detail || `HTTP ${res.status}`)
     }

@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import logging
 import os
 import tempfile
@@ -6,8 +8,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, text
@@ -72,12 +74,48 @@ async def _auto_backup_loop():
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    _load_pin_hash()
     backup_task = asyncio.create_task(_auto_backup_loop())
     yield
     backup_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Optional PIN guard
+# ---------------------------------------------------------------------------
+
+# Cached so the guard doesn't hit the database on every request; refreshed
+# at startup and whenever the PIN changes.
+_pin_hash: str | None = None
+_PIN_EXEMPT_PATHS = {"/api/security/pin/verify"}
+
+
+def _hash_pin(pin: str) -> str:
+    return hashlib.sha256(pin.encode()).hexdigest()
+
+
+def _load_pin_hash() -> None:
+    global _pin_hash
+    db = SessionLocal()
+    try:
+        setting = db.get(Setting, "app_pin_hash")
+        _pin_hash = setting.value if setting and setting.value else None
+    finally:
+        db.close()
+
+
+@app.middleware("http")
+async def pin_guard(request: Request, call_next):
+    path = request.url.path
+    if _pin_hash and path.startswith("/api/") and path not in _PIN_EXEMPT_PATHS:
+        supplied = (request.headers.get("x-bricklist-pin")
+                    or request.cookies.get("bricklist_pin", ""))
+        if not supplied or not hmac.compare_digest(_hash_pin(supplied), _pin_hash):
+            return JSONResponse({"detail": "PIN required"}, status_code=401)
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -373,10 +411,20 @@ class SettingsIn(BaseModel):
     rebrickable_api_key: str
 
 
+def _settings_response(db: Session) -> dict:
+    setting = db.get(Setting, "rebrickable_api_key")
+    key = setting.value if setting else ""
+    return {
+        # The full key is never returned — anyone on the network could read it.
+        "rebrickable_api_key_set": bool(key),
+        "rebrickable_api_key_masked": ("••••" + key[-4:]) if key else "",
+        "pin_set": _pin_hash is not None,
+    }
+
+
 @app.get("/api/settings")
 def get_settings(db: Session = Depends(get_db)):
-    setting = db.get(Setting, "rebrickable_api_key")
-    return {"rebrickable_api_key": setting.value if setting else ""}
+    return _settings_response(db)
 
 
 @app.put("/api/settings")
@@ -387,7 +435,47 @@ def update_settings(body: SettingsIn, db: Session = Depends(get_db)):
     else:
         db.add(Setting(key="rebrickable_api_key", value=body.rebrickable_api_key))
     db.commit()
-    return {"rebrickable_api_key": body.rebrickable_api_key}
+    return _settings_response(db)
+
+
+class PinIn(BaseModel):
+    new_pin: Optional[str] = None
+    current_pin: Optional[str] = None
+
+
+class PinVerifyIn(BaseModel):
+    pin: str
+
+
+@app.post("/api/security/pin")
+def set_pin(body: PinIn, db: Session = Depends(get_db)):
+    global _pin_hash
+    if _pin_hash is not None:
+        if not body.current_pin or not hmac.compare_digest(
+                _hash_pin(body.current_pin), _pin_hash):
+            raise HTTPException(status_code=403, detail="Current PIN incorrect")
+    if body.new_pin:
+        if not (4 <= len(body.new_pin) <= 12):
+            raise HTTPException(status_code=400, detail="PIN must be 4-12 characters")
+        value = _hash_pin(body.new_pin)
+    else:
+        value = ""
+    setting = db.get(Setting, "app_pin_hash")
+    if setting:
+        setting.value = value
+    else:
+        db.add(Setting(key="app_pin_hash", value=value))
+    db.commit()
+    _pin_hash = value or None
+    return {"pin_set": _pin_hash is not None}
+
+
+@app.post("/api/security/pin/verify")
+def verify_pin(body: PinVerifyIn):
+    """Exempt from the guard so a locked client can check a PIN attempt."""
+    if _pin_hash is None:
+        return {"ok": True, "pin_set": False}
+    return {"ok": hmac.compare_digest(_hash_pin(body.pin), _pin_hash), "pin_set": True}
 
 
 # ---------------------------------------------------------------------------

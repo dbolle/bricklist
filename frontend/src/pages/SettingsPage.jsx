@@ -1,21 +1,37 @@
 import { useState, useEffect } from 'react'
-import { api } from '../api.js'
+import { api, storePin, clearPin } from '../api.js'
 
 export default function SettingsPage() {
+  // apiKey is only ever the *draft* being typed — the server never returns the full key
   const [apiKey, setApiKey] = useState('')
+  const [keySet, setKeySet] = useState(false)
+  const [keyMasked, setKeyMasked] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [saved, setSaved] = useState(false)
 
+  // Security (PIN)
+  const [pinSet, setPinSet] = useState(false)
+  const [newPin, setNewPin] = useState('')
+  const [currentPin, setCurrentPin] = useState('')
+  const [pinBusy, setPinBusy] = useState(false)
+  const [pinMsg, setPinMsg] = useState(null) // {ok, text}
+
   // Cache management
   const [cachedSets, setCachedSets] = useState([]) // [{set_num, name}]
   const [refreshing, setRefreshing] = useState({}) // { [set_num]: 'loading'|'ok'|'error' }
   const [refreshingAll, setRefreshingAll] = useState(false)
 
+  function applySettings(s) {
+    setKeySet(!!s.rebrickable_api_key_set)
+    setKeyMasked(s.rebrickable_api_key_masked || '')
+    setPinSet(!!s.pin_set)
+  }
+
   useEffect(() => {
-    api.getSettings().then((s) => setApiKey(s.rebrickable_api_key || ''))
+    api.getSettings().then(applySettings).catch(() => {})
     api.getProjects().then((data) => {
       const seen = new Set()
       const sets = []
@@ -54,13 +70,50 @@ export default function SettingsPage() {
     setSaving(true)
     setSaved(false)
     try {
-      await api.saveSettings({ rebrickable_api_key: apiKey })
+      const s = await api.saveSettings({ rebrickable_api_key: apiKey.trim() })
+      applySettings(s)
+      setApiKey('')
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
       alert('Failed to save: ' + e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSetPin() {
+    setPinBusy(true)
+    setPinMsg(null)
+    try {
+      const res = await api.setPin(newPin, pinSet ? currentPin : null)
+      if (newPin) storePin(newPin)
+      else clearPin()
+      setPinSet(res.pin_set)
+      setNewPin('')
+      setCurrentPin('')
+      setPinMsg({ ok: true, text: res.pin_set ? 'PIN saved — this browser stays unlocked' : 'PIN removed' })
+    } catch (e) {
+      setPinMsg({ ok: false, text: e.message.includes('PIN') ? e.message : 'Failed: ' + e.message })
+    } finally {
+      setPinBusy(false)
+    }
+  }
+
+  async function handleRemovePin() {
+    setPinBusy(true)
+    setPinMsg(null)
+    try {
+      const res = await api.setPin('', currentPin)
+      clearPin()
+      setPinSet(res.pin_set)
+      setNewPin('')
+      setCurrentPin('')
+      setPinMsg({ ok: true, text: 'PIN removed' })
+    } catch (e) {
+      setPinMsg({ ok: false, text: e.message.includes('PIN') ? e.message : 'Failed: ' + e.message })
+    } finally {
+      setPinBusy(false)
     }
   }
 
@@ -106,7 +159,7 @@ export default function SettingsPage() {
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Paste your API key here"
+              placeholder={keySet ? `Saved key: ${keyMasked} — paste a new key to replace` : 'Paste your API key here'}
               className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <button
@@ -132,14 +185,14 @@ export default function SettingsPage() {
         <div className="flex gap-2">
           <button
             onClick={handleSave}
-            disabled={saving || !apiKey}
+            disabled={saving || !apiKey.trim()}
             className="flex-1 bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? 'Saving…' : saved ? 'Saved!' : 'Save Key'}
           </button>
           <button
             onClick={handleTest}
-            disabled={testing || !apiKey}
+            disabled={testing || (!keySet && !apiKey.trim())}
             className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {testing ? 'Testing…' : 'Test Connection'}
@@ -166,7 +219,7 @@ export default function SettingsPage() {
             </div>
             <button
               onClick={handleRefreshAll}
-              disabled={refreshingAll || !apiKey}
+              disabled={refreshingAll}
               className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
             >
               {refreshingAll ? 'Refreshing…' : 'Refresh All'}
@@ -186,7 +239,7 @@ export default function SettingsPage() {
                   {state === 'error' && <span className="text-xs text-red-600 dark:text-red-400 font-medium">Failed</span>}
                   <button
                     onClick={() => handleRefreshSet(set_num)}
-                    disabled={state === 'loading' || refreshingAll || !apiKey}
+                    disabled={state === 'loading' || refreshingAll}
                     className="flex-shrink-0 px-2.5 py-1 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {state === 'loading' ? 'Refreshing…' : 'Refresh'}
@@ -215,6 +268,65 @@ export default function SettingsPage() {
             Download Backup
           </a>
         </div>
+      </div>
+
+      <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-3">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Security</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {pinSet
+              ? 'PIN protection is on — every device on the network needs the PIN.'
+              : 'Require a PIN on this network. Anyone without it sees only a lock screen.'}
+          </p>
+        </div>
+
+        {pinSet && (
+          <input
+            type="password"
+            inputMode="numeric"
+            value={currentPin}
+            onChange={(e) => { setCurrentPin(e.target.value); setPinMsg(null) }}
+            placeholder="Current PIN"
+            className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        )}
+        <input
+          type="password"
+          inputMode="numeric"
+          value={newPin}
+          onChange={(e) => { setNewPin(e.target.value); setPinMsg(null) }}
+          placeholder={pinSet ? 'New PIN (4–12 characters)' : 'Choose a PIN (4–12 characters)'}
+          className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleSetPin}
+            disabled={pinBusy || newPin.length < 4 || newPin.length > 12 || (pinSet && !currentPin)}
+            className="flex-1 bg-blue-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {pinBusy ? 'Saving…' : pinSet ? 'Change PIN' : 'Set PIN'}
+          </button>
+          {pinSet && (
+            <button
+              onClick={handleRemovePin}
+              disabled={pinBusy || !currentPin}
+              className="flex-1 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg py-2.5 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Remove PIN
+            </button>
+          )}
+        </div>
+
+        {pinMsg && (
+          <div
+            className={`rounded-lg p-3 text-sm ${
+              pinMsg.ok ? 'bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-200 border border-green-200 dark:border-green-900' : 'bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-900'
+            }`}
+          >
+            {pinMsg.ok ? '✓ ' : '✗ '}{pinMsg.text}
+          </div>
+        )}
       </div>
 
       <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4">

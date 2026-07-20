@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import PinGate from './components/PinGate.jsx'
 import Layout from './components/Layout.jsx'
 import HomePage from './pages/HomePage.jsx'
 import SearchPage from './pages/SearchPage.jsx'
@@ -11,8 +12,9 @@ import SettingsPage from './pages/SettingsPage.jsx'
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <PinGate>
+      <BrowserRouter>
+        <Routes>
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="/search" element={<SearchPage />} />
@@ -24,7 +26,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </PinGate>
   )
 }
