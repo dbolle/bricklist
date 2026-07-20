@@ -145,6 +145,12 @@ def is_stale(cached_at: datetime) -> bool:
 _refreshing_sets: set[str] = set()
 _background_tasks: set[asyncio.Task] = set()
 
+# Silent-degradation counters surfaced by /api/diagnostics: fetches that fell
+# back to Rebrickable (BrickScan miss/down/drift) and the last background
+# refresh failure — both otherwise visible only in container logs.
+_rebrickable_fallbacks: dict = {"count": 0, "last_at": None, "last_set": None}
+_last_refresh_failure: dict | None = None
+
 
 async def _refresh_set_in_background(set_num: str) -> None:
     if set_num in _refreshing_sets:
@@ -156,7 +162,13 @@ async def _refresh_set_in_background(set_num: str) -> None:
             await _fetch_and_cache_set(set_num, db)
         finally:
             db.close()
-    except Exception:
+    except Exception as e:
+        global _last_refresh_failure
+        _last_refresh_failure = {
+            "set_num": set_num,
+            "at": datetime.utcnow().isoformat(),
+            "error": getattr(e, "detail", repr(e)),
+        }
         logger.exception("Background refresh of set %s failed", set_num)
     finally:
         _refreshing_sets.discard(set_num)
@@ -268,6 +280,9 @@ async def _fetch_and_cache_set(set_num: str, db: Session) -> SetModel:
     # needs an API key).
     fetched = await _fetch_from_brickscan(set_num)
     if fetched is None:
+        _rebrickable_fallbacks["count"] += 1
+        _rebrickable_fallbacks["last_at"] = datetime.utcnow().isoformat()
+        _rebrickable_fallbacks["last_set"] = set_num
         fetched = await _fetch_from_rebrickable(set_num, get_api_key(db))
     set_data, all_parts = fetched
 
@@ -476,6 +491,23 @@ def verify_pin(body: PinVerifyIn):
     if _pin_hash is None:
         return {"ok": True, "pin_set": False}
     return {"ok": hmac.compare_digest(_hash_pin(body.pin), _pin_hash), "pin_set": True}
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+@app.get("/api/diagnostics")
+async def diagnostics(db: Session = Depends(get_db)):
+    setting = db.get(Setting, "rebrickable_api_key")
+    return {
+        "brickscan": await brickscan.get_health(),
+        "rebrickable_key_set": bool(setting and setting.value),
+        "rebrickable_fallbacks": _rebrickable_fallbacks,
+        "last_refresh_failure": _last_refresh_failure,
+        "backups": backups.summarize(BACKUP_DIR, BACKUP_MIRROR_DIR),
+        "pin_set": _pin_hash is not None,
+    }
 
 
 # ---------------------------------------------------------------------------

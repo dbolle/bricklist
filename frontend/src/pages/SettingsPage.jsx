@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react'
 import { api, storePin, clearPin } from '../api.js'
 
+function DiagRow({ ok, warn = false, label, detail }) {
+  const dot = ok ? 'bg-green-500' : warn ? 'bg-amber-500' : 'bg-red-500'
+  return (
+    <div className="flex items-start gap-2 py-2">
+      <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${dot}`} />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 break-words">{detail}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   // apiKey is only ever the *draft* being typed — the server never returns the full key
   const [apiKey, setApiKey] = useState('')
@@ -11,6 +24,21 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [saved, setSaved] = useState(false)
+
+  // Diagnostics
+  const [diag, setDiag] = useState(null)
+  const [diagLoading, setDiagLoading] = useState(false)
+
+  async function loadDiagnostics() {
+    setDiagLoading(true)
+    try {
+      setDiag(await api.getDiagnostics())
+    } catch {
+      setDiag(null)
+    } finally {
+      setDiagLoading(false)
+    }
+  }
 
   // Security (PIN)
   const [pinSet, setPinSet] = useState(false)
@@ -325,6 +353,70 @@ export default function SettingsPage() {
             }`}
           >
             {pinMsg.ok ? '✓ ' : '✗ '}{pinMsg.text}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200">Diagnostics</h2>
+          <button
+            onClick={loadDiagnostics}
+            disabled={diagLoading}
+            className="px-3 py-1.5 text-xs font-medium border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          >
+            {diagLoading ? 'Checking…' : 'Refresh'}
+          </button>
+        </div>
+        {!diag && !diagLoading && (
+          <p className="text-xs text-gray-400 dark:text-gray-500">Tap Refresh to check system health.</p>
+        )}
+        {diag && (
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+            <DiagRow
+              ok={diag.brickscan.reachable}
+              label="BrickScan"
+              detail={diag.brickscan.reachable
+                ? `v${diag.brickscan.version} · catalog ${diag.brickscan.catalog_imported_at ? diag.brickscan.catalog_imported_at.slice(0, 10) : 'unknown'}`
+                : (diag.brickscan.error || 'unreachable')}
+            />
+            <DiagRow
+              ok={diag.rebrickable_key_set}
+              warn={!diag.rebrickable_key_set}
+              label="Rebrickable fallback"
+              detail={diag.rebrickable_key_set ? 'API key saved' : 'no API key — fallback unavailable'}
+            />
+            <DiagRow
+              ok={diag.rebrickable_fallbacks.count === 0}
+              warn={diag.rebrickable_fallbacks.count > 0}
+              label="Catalog misses"
+              detail={diag.rebrickable_fallbacks.count === 0
+                ? 'no fallbacks since restart'
+                : `${diag.rebrickable_fallbacks.count} fetch${diag.rebrickable_fallbacks.count !== 1 ? 'es' : ''} fell back (last: ${diag.rebrickable_fallbacks.last_set})`}
+            />
+            <DiagRow
+              ok={!diag.last_refresh_failure}
+              warn={!!diag.last_refresh_failure}
+              label="Background refresh"
+              detail={diag.last_refresh_failure
+                ? `last failure: ${diag.last_refresh_failure.set_num} — ${diag.last_refresh_failure.error}`
+                : 'no failures since restart'}
+            />
+            <DiagRow
+              ok={!!diag.backups.last_run?.ok}
+              label="Auto-backup"
+              detail={diag.backups.last_run
+                ? `${diag.backups.last_run.ok ? 'ok' : 'FAILED'} · ${diag.backups.volume.daily} daily / ${diag.backups.volume.monthly} monthly in volume`
+                : 'has not run yet'}
+            />
+            <DiagRow
+              ok={diag.backups.mirror.configured && diag.backups.mirror.daily > 0}
+              warn={!diag.backups.mirror.configured}
+              label="Backup mirror"
+              detail={diag.backups.mirror.configured
+                ? `${diag.backups.mirror.daily} daily / ${diag.backups.mirror.monthly} monthly mirrored`
+                : 'mirror mount missing'}
+            />
           </div>
         )}
       </div>

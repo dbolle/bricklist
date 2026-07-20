@@ -15,6 +15,27 @@ BRICKSCAN_URL = os.getenv("BRICKSCAN_URL", "http://localhost:8420")
 _transport: httpx.AsyncBaseTransport | None = None
 
 
+async def get_health() -> dict:
+    """Service + catalog status for diagnostics. Never raises — an
+    unreachable BrickScan is itself the diagnostic result."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, transport=_transport) as client:
+            health = await client.get(f"{BRICKSCAN_URL}/api/v1/health")
+            catalog = await client.get(f"{BRICKSCAN_URL}/api/v1/catalog/status")
+    except httpx.RequestError as e:
+        return {"reachable": False, "error": str(e)}
+    out: dict = {"reachable": health.status_code == 200}
+    if health.status_code == 200:
+        h = health.json()
+        out["version"] = h.get("version")
+        out["engine"] = h.get("engine")
+    if catalog.status_code == 200:
+        c = catalog.json()
+        out["catalog_imported_at"] = (c.get("database") or {}).get("imported_at")
+        out["catalog_refresh"] = c.get("refresh")
+    return out
+
+
 async def get_set(set_num: str) -> dict | None:
     """Set metadata from BrickScan's local catalog; None if not in catalog."""
     try:

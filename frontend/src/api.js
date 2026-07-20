@@ -45,6 +45,9 @@ export const api = {
   getSettings: () => request('GET', '/settings'),
   saveSettings: (data) => request('PUT', '/settings', data),
 
+  // Diagnostics
+  getDiagnostics: () => request('GET', '/diagnostics'),
+
   // Security
   verifyPin: (pin) => request('POST', '/security/pin/verify', { pin }),
   setPin: (newPin, currentPin) =>

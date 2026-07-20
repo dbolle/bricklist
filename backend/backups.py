@@ -88,6 +88,26 @@ def mirror_snapshots(backup_dir: str, mirror_dir: str, keep: int, keep_monthly: 
     return copied
 
 
+def summarize(backup_dir: str, mirror_dir: str) -> dict:
+    """Snapshot inventory for diagnostics."""
+    def tier_counts(d: str) -> dict:
+        if not os.path.isdir(d):
+            return {"daily": 0, "monthly": 0, "newest": None}
+        dailies = sorted(f for f in os.listdir(d) if SNAPSHOT_PATTERN.match(f))
+        monthlies = sorted(f for f in os.listdir(d) if MONTHLY_PATTERN.match(f))
+        return {
+            "daily": len(dailies),
+            "monthly": len(monthlies),
+            "newest": dailies[-1] if dailies else None,
+        }
+
+    return {
+        "last_run": last_run,
+        "volume": tier_counts(backup_dir),
+        "mirror": {"configured": os.path.isdir(mirror_dir), **tier_counts(mirror_dir)},
+    }
+
+
 def snapshot_due(backup_dir: str, max_age_seconds: float) -> bool:
     """True if there is no auto-snapshot newer than max_age_seconds.
 
