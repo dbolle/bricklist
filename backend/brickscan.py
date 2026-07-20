@@ -78,6 +78,7 @@ async def get_part_sets(part_num: str, limit: int = 100) -> dict | None:
     return {
         "num_sets": (data.get("usage") or {}).get("num_sets", 0),
         "sets": data.get("sets", []),
+        "relationships": data.get("relationships", []),
     }
 
 

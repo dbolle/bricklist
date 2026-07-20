@@ -947,7 +947,7 @@ async def match_bin(bin_id: int, db: Session = Depends(get_db)):
     if not b.parts:
         raise HTTPException(status_code=400, detail="Bin has no parts yet")
 
-    candidates = await matching.discover_candidates(b.parts)
+    candidates, families = await matching.discover_candidates(b.parts)
     top = candidates[:matching.MAX_VERIFY_CANDIDATES]
 
     matches = []
@@ -961,7 +961,8 @@ async def match_bin(bin_id: int, db: Session = Depends(get_db)):
                 break
             logger.warning("Skipping candidate %s: %s", cand["set_num"], e.detail)
             continue
-        matches.append({**cand, **matching.score_against_inventory(b.parts, db_set.parts)})
+        matches.append({**cand, **matching.score_against_inventory(
+            b.parts, db_set.parts, families)})
 
     if verified:
         matches.sort(key=lambda m: m["match_score"], reverse=True)
